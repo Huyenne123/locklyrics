@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>items</key>
+	<array>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>General</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>enabled</string>
+			<key>label</key>
+			<string>Enabled</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>App Filter</string>
+			<key>footerText</key>
+			<string>Whitelist: Only selected apps and default music players display lyrics.
+Blacklist: All apps display lyrics except selected apps.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSegmentCell</string>
+			<key>default</key>
+			<integer>0</integer>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>appFilterMode</string>
+			<key>validValues</key>
+			<array>
+				<integer>0</integer>
+				<integer>1</integer>
+			</array>
+			<key>validTitles</key>
+			<array>
+				<string>Whitelist</string>
+				<string>Blacklist</string>
+			</array>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>detail</key>
+			<string>ATLApplicationListMultiSelectionController</string>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>customWhitelistApps</string>
+			<key>label</key>
+			<string>Select Whitelisted Apps</string>
+			<key>id</key>
+			<string>customWhitelistApps</string>
+			<key>sections</key>
+			<array>
+				<dict>
+					<key>sectionType</key>
+					<string>User</string>
+				</dict>
+				<dict>
+					<key>sectionType</key>
+					<string>System</string>
+				</dict>
+			</array>
+			<key>showIdentifiersAsSubtitle</key>
+			<true/>
+			<key>defaultApplicationSwitchValue</key>
+			<false/>
+			<key>useSearchBar</key>
+			<true/>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>detail</key>
+			<string>ATLApplicationListMultiSelectionController</string>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>customBlacklistApps</string>
+			<key>label</key>
+			<string>Select Blacklisted Apps</string>
+			<key>id</key>
+			<string>customBlacklistApps</string>
+			<key>sections</key>
+			<array>
+				<dict>
+					<key>sectionType</key>
+					<string>User</string>
+				</dict>
+				<dict>
+					<key>sectionType</key>
+					<string>System</string>
+				</dict>
+			</array>
+			<key>showIdentifiersAsSubtitle</key>
+			<true/>
+			<key>defaultApplicationSwitchValue</key>
+			<false/>
+			<key>useSearchBar</key>
+			<true/>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Position</string>
+			<key>footerText</key>
+			<string>You can also drag the lyrics directly on your lockscreen anytime to reposition them!</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>detail</key>
+			<string>PSListItemsController</string>
+			<key>default</key>
+			<integer>0</integer>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>alignmentPreset</string>
+			<key>label</key>
+			<string>Position Preset</string>
+			<key>validValues</key>
+			<array>
+				<integer>0</integer>
+				<integer>1</integer>
+				<integer>2</integer>
+				<integer>3</integer>
+			</array>
+			<key>validTitles</key>
+			<array>
+				<string>Custom / Draggable</string>
+				<string>Below Clock</string>
+				<string>Screen Center</string>
+				<string>Above Media Controls</string>
+			</array>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>enableLiveDrag</string>
+			<key>label</key>
+			<string>Enable Live Dragging</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>lockPosition</string>
+			<key>label</key>
+			<string>Lock Position</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>resetPosition</string>
+			<key>label</key>
+			<string>Reset Position to Default</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Appearance &amp; Font Size</string>
+			<key>footerText</key>
+			<string>Auto Font Size automatically optimizes size based on lyric length (short punchy lyrics appear larger, longer verses fit comfortably). Or use the slider to set a custom base size.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSegmentCell</string>
+			<key>default</key>
+			<integer>3</integer>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>visibleLinesCount</string>
+			<key>validValues</key>
+			<array>
+				<integer>1</integer>
+				<integer>3</integer>
+				<integer>5</integer>
+			</array>
+			<key>validTitles</key>
+			<array>
+				<string>1 Line</string>
+				<string>3 Lines</string>
+				<string>5 Lines</string>
+			</array>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>autoFontSize</string>
+			<key>label</key>
+			<string>Auto Font Size (Dynamic)</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSliderCell</string>
+			<key>default</key>
+			<real>20</real>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>fontSize</string>
+			<key>min</key>
+			<real>14</real>
+			<key>max</key>
+			<real>32</real>
+			<key>showValue</key>
+			<true/>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Lyrics Provider</string>
+			<key>footerText</key>
+			<string>LRCLIB is open, fast, and requires no setup. For Musixmatch, you can paste your raw usertoken or your full browser cookie (musixmatchUserToken=...; aws-waf-token=...). LockLyrics automatically parses and authenticates it.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSegmentCell</string>
+			<key>default</key>
+			<integer>0</integer>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>lyricsProvider</string>
+			<key>validValues</key>
+			<array>
+				<integer>0</integer>
+				<integer>1</integer>
+			</array>
+			<key>validTitles</key>
+			<array>
+				<string>LRCLIB (Default)</string>
+				<string>Musixmatch</string>
+			</array>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>default</key>
+			<string></string>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>musixmatchUserToken</string>
+			<key>label</key>
+			<string>MXM Token</string>
+			<key>placeholder</key>
+			<string>Paste token or musixmatchUserToken cookie</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Cache</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>clearLyricsCache</string>
+			<key>label</key>
+			<string>Clear Cached Lyrics</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>About</string>
+			<key>footerText</key>
+			<string>Lyrics provided by LRCLIB and Musixmatch. LockLyrics is open source.</string>
+		</dict>
+	</array>
+	<key>title</key>
+	<string>LockLyrics</string>
+</dict>
+</plist>
