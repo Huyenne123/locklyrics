@@ -269,7 +269,7 @@ Blacklist: All apps display lyrics except selected apps.</string>
 			<key>label</key>
 			<string>Lyrics Provider</string>
 			<key>footerText</key>
-			<string>LRCLIB is open, fast, and requires no setup. For Musixmatch, you can paste your raw usertoken or your full browser cookie (musixmatchUserToken=...; aws-waf-token=...). LockLyrics automatically parses and authenticates it.</string>
+			<string>LRCLIB and lrc.red are open, fast, and require no key. Musixmatch accepts a raw token or full browser cookie. If the selected provider has no synced lyrics, LockLyrics automatically falls back to LRCLIB.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -284,11 +284,13 @@ Blacklist: All apps display lyrics except selected apps.</string>
 			<array>
 				<integer>0</integer>
 				<integer>1</integer>
+				<integer>2</integer>
 			</array>
 			<key>validTitles</key>
 			<array>
-				<string>LRCLIB (Default)</string>
+				<string>LRCLIB</string>
 				<string>Musixmatch</string>
+				<string>lrc.red</string>
 			</array>
 			<key>PostNotification</key>
 			<string>com.locklyrics.preferences.changed</string>

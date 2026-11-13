@@ -551,11 +551,116 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
     [self notifySongUpdated:nil];
 
     LRLyricsProvider provider = [LRPreferences sharedPreferences].lyricsProvider;
-    if (provider == LRLyricsProviderMusixmatch) {
+    if (provider == LRLyricsProviderLrcRed) {
+        [self fetchLyricsFromLrcRedForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+    } else if (provider == LRLyricsProviderMusixmatch) {
         [self fetchLyricsFromMusixmatchForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
     } else {
         [self fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
     }
+}
+
+#pragma mark - lrc.red API Request (With LRCLIB Fallback)
+
+- (void)fetchLyricsFromLrcRedForTrack:(NSString *)track artist:(NSString *)artist album:(NSString *)album duration:(NSTimeInterval)duration cacheKey:(NSString *)cacheKey {
+    NSString *query = (artist && artist.length > 0) ? [NSString stringWithFormat:@"%@ %@", track, artist] : track;
+    NSString *encodedQuery = urlEncodeParam(query);
+    NSString *urlString = [NSString stringWithFormat:@"https://lrc.red/search.json?q=%@", encodedQuery];
+
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url) {
+        [self fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+        return;
+    }
+
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    [req setValue:@"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" forHTTPHeaderField:@"User-Agent"];
+    [req setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+
+    __weak typeof(self) weakSelf = self;
+    NSURLSessionDataTask *searchTask = [self.session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+        if (error || !data || httpResponse.statusCode != 200) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (![json isKindOfClass:[NSDictionary class]]) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        NSArray *hits = json[@"hits"];
+        if (![hits isKindOfClass:[NSArray class]] || hits.count == 0) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        // Pick best matching hit: if duration > 0, find hit with closest duration
+        NSDictionary *bestHit = hits[0];
+        if (duration > 0 && hits.count > 1) {
+            double bestDiff = 999999.0;
+            for (NSDictionary *hit in hits) {
+                if (![hit isKindOfClass:[NSDictionary class]]) continue;
+                NSNumber *dNum = hit[@"duration"];
+                if (dNum) {
+                    double diff = fabs([dNum doubleValue] - duration);
+                    if (diff < bestDiff) {
+                        bestDiff = diff;
+                        bestHit = hit;
+                    }
+                }
+            }
+        }
+
+        NSString *isrc = bestHit[@"isrc"];
+        if (!isrc || ![isrc isKindOfClass:[NSString class]] || isrc.length == 0) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        // Fetch .lrc directly
+        NSString *lrcUrlString = [NSString stringWithFormat:@"https://lrc.red/s/%@.lrc", urlEncodeParam(isrc)];
+        NSURL *lrcUrl = [NSURL URLWithString:lrcUrlString];
+        if (!lrcUrl) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        NSMutableURLRequest *lrcReq = [NSMutableURLRequest requestWithURL:lrcUrl];
+        [lrcReq setValue:@"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" forHTTPHeaderField:@"User-Agent"];
+
+        NSURLSessionDataTask *lrcTask = [weakSelf.session dataTaskWithRequest:lrcReq completionHandler:^(NSData *lrcData, NSURLResponse *lrcResp, NSError *lrcErr) {
+            NSHTTPURLResponse *lrcHttp = (NSHTTPURLResponse *)lrcResp;
+            if (lrcErr || !lrcData || lrcHttp.statusCode != 200) {
+                [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+                return;
+            }
+
+            NSString *lrcContent = [[NSString alloc] initWithData:lrcData encoding:NSUTF8StringEncoding];
+            if (!lrcContent || lrcContent.length == 0) {
+                [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+                return;
+            }
+
+            LRLyricsSong *song = [LRLyricsSong songFromLrcString:lrcContent track:track artist:artist album:album duration:duration];
+            if (song && song.hasSyncedLyrics) {
+                NSDictionary *saveDict = @{
+                    @"trackName": track ?: @"",
+                    @"artistName": artist ?: @"",
+                    @"albumName": album ?: @"",
+                    @"duration": @(duration),
+                    @"syncedLyrics": lrcContent
+                };
+                [weakSelf handleLyricsSuccess:song rawDict:saveDict forCacheKey:cacheKey track:track artist:artist];
+            } else {
+                [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            }
+        }];
+        [lrcTask resume];
+    }];
+    [searchTask resume];
 }
 
 #pragma mark - Musixmatch API Request (With LRCLIB Fallback)

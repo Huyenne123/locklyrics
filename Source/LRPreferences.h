@@ -18,7 +18,8 @@ typedef NS_ENUM(NSInteger, LRAppFilterMode) {
 
 typedef NS_ENUM(NSInteger, LRLyricsProvider) {
     LRLyricsProviderLRCLIB = 0,
-    LRLyricsProviderMusixmatch = 1
+    LRLyricsProviderMusixmatch = 1,
+    LRLyricsProviderLrcRed = 2
 };
 
 @interface LRPreferences : NSObject

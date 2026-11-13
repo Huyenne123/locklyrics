@@ -116,6 +116,16 @@
         if (timestamps.count > 0) {
             NSString *lyricText = [NSString stringWithUTF8String:ptr];
             if (lyricText) {
+                if ([lyricText containsString:@"<"] && [lyricText containsString:@">"]) {
+                    static NSRegularExpression *regex = nil;
+                    static dispatch_once_t onceToken;
+                    dispatch_once(&onceToken, ^{
+                        regex = [NSRegularExpression regularExpressionWithPattern:@"<[^>]+>" options:0 error:nil];
+                    });
+                    if (regex) {
+                        lyricText = [regex stringByReplacingMatchesInString:lyricText options:0 range:NSMakeRange(0, lyricText.length) withTemplate:@""];
+                    }
+                }
                 lyricText = [lyricText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
             } else {
                 lyricText = @"";

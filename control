@@ -1,7 +1,7 @@
 Package: com.locklyrics.tweak
 Name: LockLyrics
 Depends: mobilesubstrate (>= 0.9.5000), preferenceloader, com.opa334.altlist
-Version: 1.0.23
+Version: 1.0.0
 Architecture: iphoneos-arm
 Description: Synced lyrics on your iOS lock screen fetched in real-time from LRCLIB with customizable positioning and live dragging!
 Maintainer: neyuh
