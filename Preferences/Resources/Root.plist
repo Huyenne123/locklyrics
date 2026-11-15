@@ -269,7 +269,7 @@ Blacklist: All apps display lyrics except selected apps.</string>
 			<key>label</key>
 			<string>Lyrics Provider</string>
 			<key>footerText</key>
-			<string>LRCLIB and lrc.red are open, fast, and require no key. Musixmatch accepts a raw token or full browser cookie. If the selected provider has no synced lyrics, LockLyrics automatically falls back to LRCLIB.</string>
+			<string>LRCLIB and lrc.red are open, fast, and require no key. SpicyLyrics provides high-precision word/line sync via developers.spicylyrics.org (API key required). Musixmatch accepts a raw token or full browser cookie. If the selected provider has no synced lyrics, LockLyrics automatically falls back to LRCLIB.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -285,13 +285,31 @@ Blacklist: All apps display lyrics except selected apps.</string>
 				<integer>0</integer>
 				<integer>1</integer>
 				<integer>2</integer>
+				<integer>3</integer>
 			</array>
 			<key>validTitles</key>
 			<array>
 				<string>LRCLIB</string>
 				<string>Musixmatch</string>
 				<string>lrc.red</string>
+				<string>SpicyLyrics</string>
 			</array>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>default</key>
+			<string></string>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>spicyLyricsApiKey</string>
+			<key>label</key>
+			<string>Spicy Key</string>
+			<key>placeholder</key>
+			<string>sl_sk_... or sl_pk_...</string>
 			<key>PostNotification</key>
 			<string>com.locklyrics.preferences.changed</string>
 		</dict>

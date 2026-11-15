@@ -551,13 +551,196 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
     [self notifySongUpdated:nil];
 
     LRLyricsProvider provider = [LRPreferences sharedPreferences].lyricsProvider;
-    if (provider == LRLyricsProviderLrcRed) {
+    if (provider == LRLyricsProviderSpicyLyrics) {
+        [self fetchLyricsFromSpicyLyricsForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+    } else if (provider == LRLyricsProviderLrcRed) {
         [self fetchLyricsFromLrcRedForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
     } else if (provider == LRLyricsProviderMusixmatch) {
         [self fetchLyricsFromMusixmatchForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
     } else {
         [self fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
     }
+}
+
+#pragma mark - SpicyLyrics API Request (With LRCLIB Fallback)
+
+- (void)fetchLyricsFromSpicyLyricsForTrack:(NSString *)track artist:(NSString *)artist album:(NSString *)album duration:(NSTimeInterval)duration cacheKey:(NSString *)cacheKey {
+    NSString *apiKey = [LRPreferences sharedPreferences].spicyLyricsApiKey;
+    if (!apiKey) apiKey = @"";
+    apiKey = [apiKey stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    if (apiKey.length == 0) {
+        // No SpicyLyrics API key entered: gracefully fall back to LRCLIB
+        [self fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+        return;
+    }
+
+    // Step 1: Search track to obtain track ID
+    NSString *qTitle = urlEncodeParam(track);
+    NSMutableString *searchUrlString = [NSMutableString stringWithFormat:@"https://api.spicylyrics.org/v1/tracks/search?title=%@", qTitle];
+    if (artist && artist.length > 0) {
+        [searchUrlString appendFormat:@"&artist=%@", urlEncodeParam(artist)];
+    }
+    if (album && album.length > 0) {
+        [searchUrlString appendFormat:@"&album=%@", urlEncodeParam(album)];
+    }
+    if (duration > 0) {
+        [searchUrlString appendFormat:@"&duration=%d", (int)duration];
+    }
+    [searchUrlString appendString:@"&limit=1"];
+
+    NSURL *searchUrl = [NSURL URLWithString:searchUrlString];
+    if (!searchUrl) {
+        [self fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+        return;
+    }
+
+    NSMutableURLRequest *searchReq = [NSMutableURLRequest requestWithURL:searchUrl];
+    [searchReq setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
+    [searchReq setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [searchReq setValue:@"LockLyrics-iOS/1.0" forHTTPHeaderField:@"User-Agent"];
+
+    __weak typeof(self) weakSelf = self;
+    NSURLSessionDataTask *searchTask = [self.session dataTaskWithRequest:searchReq completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+        if (error || !data || httpResponse.statusCode != 200) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (![json isKindOfClass:[NSDictionary class]]) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        NSArray *results = json[@"Body"][@"results"] ?: json[@"results"];
+        if (![results isKindOfClass:[NSArray class]] || results.count == 0) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        NSDictionary *firstItem = results[0];
+        NSString *trackId = firstItem[@"id"];
+        if (!trackId || ![trackId isKindOfClass:[NSString class]] || trackId.length == 0) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        // Step 2: Fetch synced lyrics with trackId
+        NSString *lyricsUrlString = [NSString stringWithFormat:@"https://api.spicylyrics.org/v1/lyrics/%@", urlEncodeParam(trackId)];
+        NSURL *lyricsUrl = [NSURL URLWithString:lyricsUrlString];
+        if (!lyricsUrl) {
+            [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            return;
+        }
+
+        NSMutableURLRequest *lyricsReq = [NSMutableURLRequest requestWithURL:lyricsUrl];
+        [lyricsReq setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
+        [lyricsReq setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+        [lyricsReq setValue:@"LockLyrics-iOS/1.0" forHTTPHeaderField:@"User-Agent"];
+
+        NSURLSessionDataTask *lyricsTask = [weakSelf.session dataTaskWithRequest:lyricsReq completionHandler:^(NSData *lData, NSURLResponse *lResp, NSError *lErr) {
+            NSHTTPURLResponse *lHttp = (NSHTTPURLResponse *)lResp;
+            if (lErr || !lData || lHttp.statusCode != 200) {
+                [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+                return;
+            }
+
+            NSDictionary *lJson = [NSJSONSerialization JSONObjectWithData:lData options:0 error:nil];
+            if (![lJson isKindOfClass:[NSDictionary class]]) {
+                [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+                return;
+            }
+
+            NSDictionary *body = lJson[@"Body"] ?: lJson;
+            NSString *type = body[@"Type"];
+            NSArray *content = body[@"Content"];
+            if (![content isKindOfClass:[NSArray class]] || content.count == 0) {
+                [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+                return;
+            }
+
+            NSMutableArray<LRLyricLine *> *parsedLines = [NSMutableArray array];
+            NSMutableString *lrcString = [NSMutableString string];
+
+            if ([type isEqualToString:@"Line"]) {
+                for (NSDictionary *lineDict in content) {
+                    if (![lineDict isKindOfClass:[NSDictionary class]]) continue;
+                    NSTimeInterval time = [lineDict[@"StartTime"] doubleValue];
+                    NSString *lineText = lineDict[@"Text"];
+                    if (lineText && [lineText isKindOfClass:[NSString class]]) {
+                        lineText = [lineText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                    } else {
+                        lineText = @"";
+                    }
+                    if (lineText.length == 0) lineText = @"•••";
+                    [parsedLines addObject:[[LRLyricLine alloc] initWithTime:time text:lineText]];
+                    [lrcString appendFormat:@"[%.2f] %@\n", time, lineText];
+                }
+            } else if ([type isEqualToString:@"Syllable"]) {
+                for (NSDictionary *lineDict in content) {
+                    if (![lineDict isKindOfClass:[NSDictionary class]]) continue;
+                    NSDictionary *lead = lineDict[@"Lead"];
+                    if (![lead isKindOfClass:[NSDictionary class]]) continue;
+
+                    NSTimeInterval time = [lead[@"StartTime"] doubleValue];
+                    NSArray *syllables = lead[@"Syllables"];
+                    NSMutableString *lineText = [NSMutableString string];
+                    if ([syllables isKindOfClass:[NSArray class]]) {
+                        for (NSDictionary *s in syllables) {
+                            if ([s isKindOfClass:[NSDictionary class]]) {
+                                NSString *st = s[@"Text"];
+                                if (st && [st isKindOfClass:[NSString class]]) {
+                                    [lineText appendString:st];
+                                }
+                            }
+                        }
+                    }
+                    if (lineText.length == 0) {
+                        NSString *t = lead[@"Text"] ?: lineDict[@"Text"];
+                        if (t && [t isKindOfClass:[NSString class]]) {
+                            [lineText appendString:t];
+                        }
+                    }
+                    NSString *clean = [lineText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                    if (clean.length == 0) clean = @"•••";
+                    [parsedLines addObject:[[LRLyricLine alloc] initWithTime:time text:clean]];
+                    [lrcString appendFormat:@"[%.2f] %@\n", time, clean];
+                }
+            }
+
+            if (parsedLines.count > 0) {
+                [parsedLines sortUsingComparator:^NSComparisonResult(LRLyricLine *a, LRLyricLine *b) {
+                    if (a.time < b.time) return NSOrderedAscending;
+                    if (a.time > b.time) return NSOrderedDescending;
+                    return NSOrderedSame;
+                }];
+
+                LRLyricsSong *song = [[LRLyricsSong alloc] init];
+                song.trackName = [track copy];
+                song.artistName = [artist copy];
+                song.albumName = [album copy];
+                song.duration = duration;
+                song.lines = [parsedLines copy];
+                song.hasSyncedLyrics = YES;
+                song.plainLyrics = lrcString;
+
+                NSDictionary *saveDict = @{
+                    @"trackName": track ?: @"",
+                    @"artistName": artist ?: @"",
+                    @"albumName": album ?: @"",
+                    @"duration": @(duration),
+                    @"syncedLyrics": lrcString
+                };
+                [weakSelf handleLyricsSuccess:song rawDict:saveDict forCacheKey:cacheKey track:track artist:artist];
+            } else {
+                [weakSelf fetchLyricsFromLrclibForTrack:track artist:artist album:album duration:duration cacheKey:cacheKey];
+            }
+        }];
+        [lyricsTask resume];
+    }];
+    [searchTask resume];
 }
 
 #pragma mark - lrc.red API Request (With LRCLIB Fallback)

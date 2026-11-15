@@ -19,7 +19,8 @@ typedef NS_ENUM(NSInteger, LRAppFilterMode) {
 typedef NS_ENUM(NSInteger, LRLyricsProvider) {
     LRLyricsProviderLRCLIB = 0,
     LRLyricsProviderMusixmatch = 1,
-    LRLyricsProviderLrcRed = 2
+    LRLyricsProviderLrcRed = 2,
+    LRLyricsProviderSpicyLyrics = 3
 };
 
 @interface LRPreferences : NSObject
@@ -41,6 +42,7 @@ typedef NS_ENUM(NSInteger, LRLyricsProvider) {
 // Lyrics Provider
 @property (nonatomic, assign) LRLyricsProvider lyricsProvider;
 @property (nonatomic, copy) NSString *musixmatchUserToken;
+@property (nonatomic, copy) NSString *spicyLyricsApiKey;
 
 // App Filter Settings (2 options: Whitelist vs Blacklist mode + AltList selection)
 @property (nonatomic, assign) LRAppFilterMode appFilterMode;

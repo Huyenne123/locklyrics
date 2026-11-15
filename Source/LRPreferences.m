@@ -124,6 +124,15 @@
         self.musixmatchUserToken = @"";
     }
 
+    // SpicyLyrics API Key
+    CFPropertyListRef spicyKeyVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"spicyLyricsApiKey", kLRPreferencesIdentifier);
+    if (spicyKeyVal && CFGetTypeID(spicyKeyVal) == CFStringGetTypeID()) {
+        self.spicyLyricsApiKey = [(__bridge NSString *)spicyKeyVal copy];
+        CFRelease(spicyKeyVal);
+    } else {
+        self.spicyLyricsApiKey = @"";
+    }
+
     // App Filter Mode (default 0: Whitelist, 1: Blacklist)
     CFPropertyListRef filterModeVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"appFilterMode", kLRPreferencesIdentifier);
     if (filterModeVal && CFGetTypeID(filterModeVal) == CFNumberGetTypeID()) {
