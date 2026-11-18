@@ -513,7 +513,8 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
 #pragma mark - LRCLIB API Request (Synced Lyrics Only + Offline Cache)
 
 - (NSString *)cacheKeyForTrack:(NSString *)track artist:(NSString *)artist {
-    return [NSString stringWithFormat:@"%@||%@", (artist ?: @""), (track ?: @"")].lowercaseString;
+    NSInteger prov = (NSInteger)[LRPreferences sharedPreferences].lyricsProvider;
+    return [NSString stringWithFormat:@"v2_%ld_%@||%@", (long)prov, (artist ?: @""), (track ?: @"")].lowercaseString;
 }
 
 - (void)fetchLyricsForTrack:(NSString *)track artist:(NSString *)artist album:(NSString *)album duration:(NSTimeInterval)duration {
@@ -689,11 +690,23 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
                     NSMutableString *lineText = [NSMutableString string];
                     if ([syllables isKindOfClass:[NSArray class]]) {
                         for (NSDictionary *s in syllables) {
-                            if ([s isKindOfClass:[NSDictionary class]]) {
-                                NSString *st = s[@"Text"];
-                                if (st && [st isKindOfClass:[NSString class]]) {
-                                    [lineText appendString:st];
-                                }
+                            if (![s isKindOfClass:[NSDictionary class]]) continue;
+                            NSString *st = s[@"Text"];
+                            if (!st || ![st isKindOfClass:[NSString class]] || st.length == 0) continue;
+
+                            [lineText appendString:st];
+
+                            // Check IsPartOfWord flag:
+                            // If YES, this syllable connects directly to the next syllable (e.g. "to" -> "gether").
+                            // If NO (or missing), this syllable completes a word, so append a space.
+                            BOOL isPartOfWord = NO;
+                            id ipow = s[@"IsPartOfWord"];
+                            if (ipow && [ipow isKindOfClass:[NSNumber class]]) {
+                                isPartOfWord = [ipow boolValue];
+                            }
+
+                            if (!isPartOfWord && ![lineText hasSuffix:@" "]) {
+                                [lineText appendString:@" "];
                             }
                         }
                     }
@@ -704,6 +717,20 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
                         }
                     }
                     NSString *clean = [lineText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                    // Clean up extraneous whitespace before punctuation
+                    clean = [clean stringByReplacingOccurrencesOfString:@" ," withString:@","];
+                    clean = [clean stringByReplacingOccurrencesOfString:@" ." withString:@"."];
+                    clean = [clean stringByReplacingOccurrencesOfString:@" !" withString:@"!"];
+                    clean = [clean stringByReplacingOccurrencesOfString:@" ?" withString:@"?"];
+                    clean = [clean stringByReplacingOccurrencesOfString:@" ;" withString:@";"];
+                    clean = [clean stringByReplacingOccurrencesOfString:@" :" withString:@":"];
+                    clean = [clean stringByReplacingOccurrencesOfString:@" )" withString:@")"];
+                    clean = [clean stringByReplacingOccurrencesOfString:@"( " withString:@"("];
+                    clean = [clean stringByReplacingOccurrencesOfString:@" ’" withString:@"’"];
+                    clean = [clean stringByReplacingOccurrencesOfString:@" '" withString:@"'"];
+                    while ([clean containsString:@"  "]) {
+                        clean = [clean stringByReplacingOccurrencesOfString:@"  " withString:@" "];
+                    }
                     if (clean.length == 0) clean = @"•••";
                     [parsedLines addObject:[[LRLyricLine alloc] initWithTime:time text:clean]];
                     [lrcString appendFormat:@"[%.2f] %@\n", time, clean];
