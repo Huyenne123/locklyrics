@@ -12,5 +12,6 @@
 @property (nonatomic, weak) id<LRPLockScreenPreviewCellDelegate> delegate;
 
 - (void)refreshFromPreferencesAnimated:(BOOL)animated;
+- (void)reloadRandomPreviewSong;
 
 @end

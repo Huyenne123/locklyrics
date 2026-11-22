@@ -209,6 +209,7 @@ static void clearLyricsCacheFiles(void) {
 
 - (void)clearLyricsCache {
     clearLyricsCacheFiles();
+    [self.previewCell reloadRandomPreviewSong];
     notify_post("com.locklyrics.preferences.changed");
 
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Lyrics Cache"

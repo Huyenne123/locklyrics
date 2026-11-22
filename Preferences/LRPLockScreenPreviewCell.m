@@ -1,8 +1,12 @@
 #import "LRPLockScreenPreviewCell.h"
 #import <Preferences/PSSpecifier.h>
 #import <QuartzCore/QuartzCore.h>
+#import <ctype.h>
+#import <dirent.h>
 #import <notify.h>
 #import <stdio.h>
+#import <stdlib.h>
+#import <string.h>
 #import <time.h>
 
 static inline NSString *lrpStr(const char *s) {
@@ -10,6 +14,24 @@ static inline NSString *lrpStr(const char *s) {
 }
 
 static const char * const kLRPPrefsChangedNotification = "com.locklyrics.preferences.changed";
+static const char * const kLRPOfflineLyricsDir = "/var/mobile/Library/LockLyrics/Lyrics";
+
+@interface LRPPreviewLine : NSObject
+@property (nonatomic, assign) NSTimeInterval time;
+@property (nonatomic, copy) NSString *text;
+- (instancetype)initWithTime:(NSTimeInterval)time text:(NSString *)text;
+@end
+
+@implementation LRPPreviewLine
+- (instancetype)initWithTime:(NSTimeInterval)time text:(NSString *)text {
+    self = [super init];
+    if (self) {
+        _time = time;
+        _text = text ? [text copy] : [NSString string];
+    }
+    return self;
+}
+@end
 
 @interface LRPLockScreenPreviewCell ()
 
@@ -32,10 +54,25 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 @property (nonatomic, strong) CAGradientLayer *wallpaperGradient;
 @property (nonatomic, strong) UIView *centerGuideLine;
 
+@property (nonatomic, strong) UILabel *mediaTitleLabel;
+@property (nonatomic, strong) UILabel *mediaArtistLabel;
+@property (nonatomic, strong) UIView *mediaProgressBg;
+@property (nonatomic, strong) UIView *mediaProgressFill;
+@property (nonatomic, strong) UILabel *mediaElapsedLabel;
+@property (nonatomic, strong) UILabel *mediaRemainingLabel;
+
 @property (nonatomic, strong) UIView *lyricsBoxView;
 @property (nonatomic, strong) UIStackView *lyricsStackView;
 @property (nonatomic, strong) NSMutableArray<UILabel *> *lyricsLabels;
 
+@property (nonatomic, strong) NSArray<LRPPreviewLine *> *previewSongLines;
+@property (nonatomic, assign) NSInteger previewLineIndex;
+@property (nonatomic, copy) NSString *previewTrackName;
+@property (nonatomic, copy) NSString *previewArtistName;
+@property (nonatomic, assign) NSTimeInterval previewElapsedTime;
+@property (nonatomic, assign) NSTimeInterval previewDuration;
+
+@property (nonatomic, strong) UIButton *shuffleButton;
 @property (nonatomic, strong) UILabel *titleLabelCustom;
 @property (nonatomic, strong) UILabel *valueLabel;
 @property (nonatomic, strong) UISlider *ySlider;
@@ -44,6 +81,157 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 @property (nonatomic, assign) BOOL isDraggingSlider;
 
 @end
+
+#pragma mark - Pure POSIX & C Cache Parsing Helpers
+
+static NSData *lrpReadFileData(const char *path) {
+    if (!path) return nil;
+    FILE *f = fopen(path, "rb");
+    if (!f) return nil;
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return nil;
+    }
+    long size = ftell(f);
+    if (size <= 0 || size > 4 * 1024 * 1024) {
+        fclose(f);
+        return nil;
+    }
+    rewind(f);
+    void *buf = malloc((size_t)size);
+    if (!buf) {
+        fclose(f);
+        return nil;
+    }
+    size_t readBytes = fread(buf, 1, (size_t)size, f);
+    fclose(f);
+    if (readBytes != (size_t)size) {
+        free(buf);
+        return nil;
+    }
+    return [NSData dataWithBytesNoCopy:buf length:(NSUInteger)size freeWhenDone:YES];
+}
+
+static void lrpShuffleMutableArray(NSMutableArray *arr) {
+    NSUInteger count = arr.count;
+    if (count < 2) return;
+    for (NSUInteger i = count - 1; i > 0; i--) {
+        NSUInteger j = (NSUInteger)arc4random_uniform((uint32_t)(i + 1));
+        if (i != j) {
+            [arr exchangeObjectAtIndex:i withObjectAtIndex:j];
+        }
+    }
+}
+
+static BOOL lrpHasSuffix(const char *str, const char *suffix) {
+    if (!str || !suffix) return NO;
+    size_t slen = strlen(str);
+    size_t suflen = strlen(suffix);
+    if (slen < suflen) return NO;
+    return strcmp(str + (slen - suflen), suffix) == 0;
+}
+
+static NSArray<LRPPreviewLine *> *lrpParseLrcUTF8(const char *utf8) {
+    if (!utf8 || utf8[0] == '\0') return @[];
+
+    NSMutableArray<LRPPreviewLine *> *parsedLines = [NSMutableArray array];
+    NSMutableArray<NSNumber *> *timestamps = [NSMutableArray array];
+    NSString *dots = lrpStr("•••");
+
+    const char *cursor = utf8;
+    while (*cursor) {
+        const char *lineStart = cursor;
+        const char *lineEnd = cursor;
+        while (*lineEnd && *lineEnd != '\n' && *lineEnd != '\r') {
+            lineEnd++;
+        }
+        cursor = lineEnd;
+        while (*cursor == '\n' || *cursor == '\r') {
+            cursor++;
+        }
+
+        size_t lineLen = (size_t)(lineEnd - lineStart);
+        if (lineLen == 0) continue;
+
+        char *lineBuf = (char *)malloc(lineLen + 1);
+        if (!lineBuf) continue;
+        memcpy(lineBuf, lineStart, lineLen);
+        lineBuf[lineLen] = '\0';
+
+        [timestamps removeAllObjects];
+        const char *ptr = lineBuf;
+        while (*ptr) {
+            const char *startBracket = strchr(ptr, '[');
+            if (!startBracket) break;
+            const char *endBracket = strchr(startBracket, ']');
+            if (!endBracket) break;
+
+            int min = 0;
+            double sec = 0.0;
+            if (sscanf(startBracket, "[%d:%lf]", &min, &sec) == 2) {
+                [timestamps addObject:@((min * 60.0) + sec)];
+                ptr = endBracket + 1;
+            } else if (endBracket > startBracket + 1 &&
+                       isdigit((unsigned char)startBracket[1]) &&
+                       sscanf(startBracket, "[%lf]", &sec) == 1) {
+                [timestamps addObject:@(sec)];
+                ptr = endBracket + 1;
+            } else {
+                ptr = endBracket + 1;
+            }
+        }
+
+        if (timestamps.count > 0) {
+            size_t remLen = strlen(ptr);
+            char *cleanBuf = (char *)malloc(remLen + 1);
+            if (cleanBuf) {
+                const char *src = ptr;
+                char *dst = cleanBuf;
+                while (*src) {
+                    if (*src == '<') {
+                        const char *close = strchr(src, '>');
+                        if (close) {
+                            src = close + 1;
+                            continue;
+                        }
+                    }
+                    *dst++ = *src++;
+                }
+                *dst = '\0';
+
+                // Trim leading and trailing ASCII whitespace
+                char *trimmed = cleanBuf;
+                while (*trimmed == ' ' || *trimmed == '\t' || *trimmed == '\r' || *trimmed == '\n') {
+                    trimmed++;
+                }
+                size_t tlen = strlen(trimmed);
+                while (tlen > 0 && (trimmed[tlen - 1] == ' ' || trimmed[tlen - 1] == '\t' ||
+                                    trimmed[tlen - 1] == '\r' || trimmed[tlen - 1] == '\n')) {
+                    trimmed[--tlen] = '\0';
+                }
+
+                NSString *lyricText = (tlen > 0) ? lrpStr(trimmed) : dots;
+                if (!lyricText || lyricText.length == 0) {
+                    lyricText = dots;
+                }
+
+                for (NSNumber *timeNum in timestamps) {
+                    [parsedLines addObject:[[LRPPreviewLine alloc] initWithTime:[timeNum doubleValue] text:lyricText]];
+                }
+                free(cleanBuf);
+            }
+        }
+        free(lineBuf);
+    }
+
+    [parsedLines sortUsingComparator:^NSComparisonResult(LRPPreviewLine *a, LRPPreviewLine *b) {
+        if (a.time < b.time) return NSOrderedAscending;
+        if (a.time > b.time) return NSOrderedDescending;
+        return NSOrderedSame;
+    }];
+
+    return [parsedLines copy];
+}
 
 @implementation LRPLockScreenPreviewCell
 
@@ -62,6 +250,7 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 
         [self computeScreenMetrics];
         [self buildUI];
+        [self loadRandomCachedSong];
         [self refreshFromPreferencesAnimated:NO];
     }
     return self;
@@ -126,6 +315,16 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 
     // Build mock Lock Screen elements
     [self buildMockLockScreenElements];
+
+    // Subtle Shuffle button to re-roll cached song & timestamp
+    self.shuffleButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.shuffleButton.translatesAutoresizingMaskIntoConstraints = NO;
+    UIImageSymbolConfiguration *shufCfg = [UIImageSymbolConfiguration configurationWithPointSize:13.0 weight:UIImageSymbolWeightMedium];
+    [self.shuffleButton setImage:[UIImage systemImageNamed:lrpStr("shuffle") withConfiguration:shufCfg] forState:UIControlStateNormal];
+    self.shuffleButton.tintColor = [UIColor secondaryLabelColor];
+    self.shuffleButton.accessibilityLabel = lrpStr("Shuffle preview song");
+    [self.shuffleButton addTarget:self action:@selector(handleShuffleTap:) forControlEvents:UIControlEventTouchUpInside];
+    [container addSubview:self.shuffleButton];
 
     // Center snap guide line (visible briefly when sliding near 50%)
     self.centerGuideLine = [[UIView alloc] init];
@@ -197,6 +396,11 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
         [self.bezelView.widthAnchor constraintEqualToConstant:self.previewWidth + bezelPad * 2.0],
         [self.bezelView.heightAnchor constraintEqualToConstant:self.previewHeight + bezelPad * 2.0],
 
+        [self.shuffleButton.topAnchor constraintEqualToAnchor:self.bezelView.topAnchor],
+        [self.shuffleButton.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:-14.0],
+        [self.shuffleButton.widthAnchor constraintEqualToConstant:28.0],
+        [self.shuffleButton.heightAnchor constraintEqualToConstant:28.0],
+
         [self.screenView.topAnchor constraintEqualToAnchor:self.bezelView.topAnchor constant:bezelPad],
         [self.screenView.bottomAnchor constraintEqualToAnchor:self.bezelView.bottomAnchor constant:-bezelPad],
         [self.screenView.leadingAnchor constraintEqualToAnchor:self.bezelView.leadingAnchor constant:bezelPad],
@@ -267,7 +471,7 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     clockLabel.userInteractionEnabled = NO;
     [self.screenView addSubview:clockLabel];
 
-    // Media Player Card (matches typical iOS 16-18 Lock Screen Now Playing card at ~64%-81% height)
+    // Media Player Card (matches typical iOS 16-18 Lock Screen Now Playing card at ~64%-81.5% height)
     CGFloat cardMargin = 8.0;
     CGFloat cardW = w - (cardMargin * 2.0);
     CGFloat cardH = h * 0.175;
@@ -280,39 +484,59 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     mediaCard.userInteractionEnabled = NO;
     [self.screenView addSubview:mediaCard];
 
-    // Mini artwork square
-    UIView *artwork = [[UIView alloc] initWithFrame:CGRectMake(7.0, 7.0, 19.0, 19.0)];
-    artwork.backgroundColor = [UIColor colorWithRed:0.35 green:0.55 blue:0.75 alpha:0.85];
+    // Mini artwork square with subtle music note glyph
+    UIView *artwork = [[UIView alloc] initWithFrame:CGRectMake(7.0, 6.0, 18.0, 18.0)];
+    artwork.backgroundColor = [UIColor colorWithRed:0.30 green:0.52 blue:0.74 alpha:0.85];
     artwork.layer.cornerRadius = 4.0;
+    UIImageSymbolConfiguration *artCfg = [UIImageSymbolConfiguration configurationWithPointSize:8.5 weight:UIImageSymbolWeightMedium];
+    UIImageView *artIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:lrpStr("music.note") withConfiguration:artCfg]];
+    artIcon.tintColor = [UIColor colorWithWhite:1.0 alpha:0.90];
+    artIcon.contentMode = UIViewContentModeCenter;
+    artIcon.frame = artwork.bounds;
+    [artwork addSubview:artIcon];
     [mediaCard addSubview:artwork];
 
-    // Mini song title & artist bars
-    UIView *titleBar = [[UIView alloc] initWithFrame:CGRectMake(31.0, 10.0, cardW * 0.45, 4.0)];
-    titleBar.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.75];
-    titleBar.layer.cornerRadius = 2.0;
-    [mediaCard addSubview:titleBar];
+    // Song title & artist labels
+    self.mediaTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(29.0, 6.5, cardW - 36.0, 10.0)];
+    self.mediaTitleLabel.font = [UIFont systemFontOfSize:7.5 weight:UIFontWeightSemibold];
+    self.mediaTitleLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.90];
+    self.mediaTitleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    [mediaCard addSubview:self.mediaTitleLabel];
 
-    UIView *artistBar = [[UIView alloc] initWithFrame:CGRectMake(31.0, 17.5, cardW * 0.30, 3.0)];
-    artistBar.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.40];
-    artistBar.layer.cornerRadius = 1.5;
-    [mediaCard addSubview:artistBar];
+    self.mediaArtistLabel = [[UILabel alloc] initWithFrame:CGRectMake(29.0, 16.5, cardW - 36.0, 8.0)];
+    self.mediaArtistLabel.font = [UIFont systemFontOfSize:6.0 weight:UIFontWeightRegular];
+    self.mediaArtistLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.55];
+    self.mediaArtistLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    [mediaCard addSubview:self.mediaArtistLabel];
 
-    // Mini progress bar
-    CGFloat progY = cardH * 0.55;
-    UIView *progBg = [[UIView alloc] initWithFrame:CGRectMake(8.0, progY, cardW - 16.0, 2.5)];
-    progBg.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.20];
-    progBg.layer.cornerRadius = 1.25;
-    [mediaCard addSubview:progBg];
+    // Progress bar + elapsed/remaining labels
+    CGFloat progW = cardW - 14.0;
+    self.mediaProgressBg = [[UIView alloc] initWithFrame:CGRectMake(7.0, 29.0, progW, 2.5)];
+    self.mediaProgressBg.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.20];
+    self.mediaProgressBg.layer.cornerRadius = 1.25;
+    [mediaCard addSubview:self.mediaProgressBg];
 
-    UIView *progFill = [[UIView alloc] initWithFrame:CGRectMake(0, 0, (cardW - 16.0) * 0.42, 2.5)];
-    progFill.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.75];
-    progFill.layer.cornerRadius = 1.25;
-    [progBg addSubview:progFill];
+    self.mediaProgressFill = [[UIView alloc] initWithFrame:CGRectMake(0, 0, progW * 0.42, 2.5)];
+    self.mediaProgressFill.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.78];
+    self.mediaProgressFill.layer.cornerRadius = 1.25;
+    [self.mediaProgressBg addSubview:self.mediaProgressFill];
+
+    self.mediaElapsedLabel = [[UILabel alloc] initWithFrame:CGRectMake(7.0, 32.5, progW / 2.0, 7.0)];
+    self.mediaElapsedLabel.font = [UIFont monospacedDigitSystemFontOfSize:5.5 weight:UIFontWeightRegular];
+    self.mediaElapsedLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.55];
+    self.mediaElapsedLabel.textAlignment = NSTextAlignmentLeft;
+    [mediaCard addSubview:self.mediaElapsedLabel];
+
+    self.mediaRemainingLabel = [[UILabel alloc] initWithFrame:CGRectMake(7.0 + progW / 2.0, 32.5, progW / 2.0, 7.0)];
+    self.mediaRemainingLabel.font = [UIFont monospacedDigitSystemFontOfSize:5.5 weight:UIFontWeightRegular];
+    self.mediaRemainingLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.55];
+    self.mediaRemainingLabel.textAlignment = NSTextAlignmentRight;
+    [mediaCard addSubview:self.mediaRemainingLabel];
 
     // Mini playback controls
     UIImageSymbolConfiguration *ctrlCfg = [UIImageSymbolConfiguration configurationWithPointSize:8.5 weight:UIImageSymbolWeightBold];
     NSArray<NSString *> *icons = @[lrpStr("backward.fill"), lrpStr("play.fill"), lrpStr("forward.fill")];
-    CGFloat ctrlY = cardH * 0.72;
+    CGFloat ctrlY = 42.0;
     CGFloat spacing = cardW / 4.0;
     for (NSInteger i = 0; i < 3; i++) {
         UIImageView *iv = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:icons[i] withConfiguration:ctrlCfg]];
@@ -365,7 +589,227 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     [self updateLyricsBoxFrameAnimated:NO];
 }
 
+#pragma mark - Cached Song Loader & Random Timestamp Picker
+
+- (void)reloadRandomPreviewSong {
+    [self loadRandomCachedSong];
+    [self updateMediaCardMetadata];
+    [self rebuildPreviewLyricsLabels];
+}
+
+- (void)populateFallbackSampleSong {
+    self.previewTrackName = lrpStr("LockLyrics");
+    self.previewArtistName = lrpStr("Preview Track");
+    self.previewElapsedTime = 84.0;
+    self.previewDuration = 205.0;
+    self.previewLineIndex = 2;
+    self.previewSongLines = @[
+        [[LRPPreviewLine alloc] initWithTime:72.0 text:lrpStr("Waiting for the night to fall")],
+        [[LRPPreviewLine alloc] initWithTime:78.0 text:lrpStr("Every step brings me closer")],
+        [[LRPPreviewLine alloc] initWithTime:84.0 text:lrpStr("Dancing in the moonlight")],
+        [[LRPPreviewLine alloc] initWithTime:90.0 text:lrpStr("Underneath the starlit sky")],
+        [[LRPPreviewLine alloc] initWithTime:96.0 text:lrpStr("Never let this moment fade")]
+    ];
+}
+
+- (BOOL)tryLoadPreviewSongFromFilename:(NSString *)filename isJSON:(BOOL)isJSON {
+    if (!filename || filename.length == 0) return NO;
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", kLRPOfflineLyricsDir, [filename UTF8String]);
+    NSData *data = lrpReadFileData(path);
+    if (!data || data.length == 0) return NO;
+
+    NSString *track = nil;
+    NSString *artist = nil;
+    NSTimeInterval songDuration = 0.0;
+    NSString *lrcText = nil;
+
+    if (isJSON) {
+        id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (![obj isKindOfClass:[NSDictionary class]]) return NO;
+        NSDictionary *dict = (NSDictionary *)obj;
+
+        id syncedObj = dict[lrpStr("syncedLyrics")];
+        if ([syncedObj isKindOfClass:[NSString class]]) {
+            lrcText = (NSString *)syncedObj;
+        }
+        if (!lrcText || lrcText.length == 0) return NO;
+
+        id trackObj = dict[lrpStr("trackName")];
+        if (![trackObj isKindOfClass:[NSString class]] || [(NSString *)trackObj length] == 0) {
+            trackObj = dict[lrpStr("name")];
+        }
+        if ([trackObj isKindOfClass:[NSString class]] && [(NSString *)trackObj length] > 0) {
+            track = (NSString *)trackObj;
+        }
+
+        id artistObj = dict[lrpStr("artistName")];
+        if ([artistObj isKindOfClass:[NSString class]] && [(NSString *)artistObj length] > 0) {
+            artist = (NSString *)artistObj;
+        }
+
+        id durObj = dict[lrpStr("duration")];
+        if ([durObj isKindOfClass:[NSNumber class]]) {
+            songDuration = [(NSNumber *)durObj doubleValue];
+        }
+    } else {
+        lrcText = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if (!lrcText || lrcText.length == 0) return NO;
+    }
+
+    NSArray<LRPPreviewLine *> *parsedLines = lrpParseLrcUTF8([lrcText UTF8String]);
+    if (parsedLines.count == 0) return NO;
+
+    // Pick a random timestamp that has real lyric text (not "•••")
+    NSString *dots = lrpStr("•••");
+    NSMutableArray<NSNumber *> *validIndices = [NSMutableArray arrayWithCapacity:parsedLines.count];
+    for (NSUInteger i = 0; i < parsedLines.count; i++) {
+        NSString *t = parsedLines[i].text;
+        if (t.length >= 2 && ![t isEqualToString:dots]) {
+            [validIndices addObject:@(i)];
+        }
+    }
+
+    NSInteger pickedIdx = 0;
+    if (validIndices.count > 0) {
+        NSUInteger r = (NSUInteger)arc4random_uniform((uint32_t)validIndices.count);
+        pickedIdx = [validIndices[r] integerValue];
+    } else {
+        pickedIdx = (NSInteger)arc4random_uniform((uint32_t)parsedLines.count);
+    }
+
+    self.previewSongLines = parsedLines;
+    self.previewLineIndex = pickedIdx;
+    self.previewElapsedTime = MAX(0.0, parsedLines[pickedIdx].time);
+
+    NSTimeInterval lastTime = parsedLines.lastObject.time;
+    if (songDuration > self.previewElapsedTime + 5.0) {
+        self.previewDuration = songDuration;
+    } else {
+        self.previewDuration = MAX(lastTime + 15.0, self.previewElapsedTime + 30.0);
+    }
+
+    self.previewTrackName = (track && track.length > 0) ? track : lrpStr("LockLyrics");
+    if (artist && artist.length > 0) {
+        self.previewArtistName = artist;
+    } else {
+        self.previewArtistName = lrpStr(isJSON ? "Preview Track" : "Cached Track");
+    }
+    return YES;
+}
+
+- (void)loadRandomCachedSong {
+    DIR *dir = opendir(kLRPOfflineLyricsDir);
+    if (!dir) {
+        [self populateFallbackSampleSong];
+        return;
+    }
+
+    NSMutableArray<NSString *> *v2JsonFiles = [NSMutableArray array];
+    NSMutableArray<NSString *> *otherJsonFiles = [NSMutableArray array];
+    NSMutableArray<NSString *> *lrcFiles = [NSMutableArray array];
+
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL) {
+        const char *name = ent->d_name;
+        if (name[0] == '.') continue;
+        if (lrpHasSuffix(name, ".json")) {
+            NSString *fn = lrpStr(name);
+            if (fn.length > 0) {
+                if (strncmp(name, "v2_", 3) == 0) {
+                    [v2JsonFiles addObject:fn];
+                } else {
+                    [otherJsonFiles addObject:fn];
+                }
+            }
+        } else if (lrpHasSuffix(name, ".lrc")) {
+            NSString *fn = lrpStr(name);
+            if (fn.length > 0) {
+                [lrcFiles addObject:fn];
+            }
+        }
+    }
+    closedir(dir);
+
+    lrpShuffleMutableArray(v2JsonFiles);
+    lrpShuffleMutableArray(otherJsonFiles);
+    lrpShuffleMutableArray(lrcFiles);
+
+    NSInteger attempts = 0;
+    const NSInteger maxAttempts = 12;
+
+    for (NSString *fn in v2JsonFiles) {
+        if (attempts++ >= maxAttempts) break;
+        if ([self tryLoadPreviewSongFromFilename:fn isJSON:YES]) return;
+    }
+    for (NSString *fn in otherJsonFiles) {
+        if (attempts++ >= maxAttempts) break;
+        if ([self tryLoadPreviewSongFromFilename:fn isJSON:YES]) return;
+    }
+    for (NSString *fn in lrcFiles) {
+        if (attempts++ >= maxAttempts) break;
+        if ([self tryLoadPreviewSongFromFilename:fn isJSON:NO]) return;
+    }
+
+    [self populateFallbackSampleSong];
+}
+
+- (void)updateMediaCardMetadata {
+    self.mediaTitleLabel.text = self.previewTrackName ?: lrpStr("LockLyrics");
+    self.mediaArtistLabel.text = self.previewArtistName ?: lrpStr("Preview Track");
+
+    CGFloat ratio = (self.previewDuration > 0.0) ? (CGFloat)(self.previewElapsedTime / self.previewDuration) : 0.42;
+    ratio = MAX(0.05, MIN(0.95, ratio));
+    CGRect bgBounds = self.mediaProgressBg.bounds;
+    self.mediaProgressFill.frame = CGRectMake(0, 0, bgBounds.size.width * ratio, bgBounds.size.height);
+
+    int eSec = MAX(0, (int)llround(self.previewElapsedTime));
+    int remSec = MAX(0, (int)llround(MAX(0.0, self.previewDuration - self.previewElapsedTime)));
+    char eBuf[16];
+    char rBuf[16];
+    snprintf(eBuf, sizeof(eBuf), "%d:%02d", eSec / 60, eSec % 60);
+    snprintf(rBuf, sizeof(rBuf), "-%d:%02d", remSec / 60, remSec % 60);
+    self.mediaElapsedLabel.text = lrpStr(eBuf);
+    self.mediaRemainingLabel.text = lrpStr(rBuf);
+}
+
 #pragma mark - Preferences & Preview Sync
+
+- (CGFloat)fontSizeForText:(NSString *)text isCenterLine:(BOOL)isCenter {
+    CGFloat baseSize = self.fontSize;
+    if (baseSize < 12.0) baseSize = 20.0;
+
+    if (!self.autoFontSize || !text || text.length == 0) {
+        return isCenter ? baseSize : MAX(baseSize - 4.0, 12.0);
+    }
+
+    NSUInteger len = text.length;
+    CGFloat size = baseSize;
+
+    if (isCenter) {
+        if (len <= 20) {
+            size = baseSize + 3.0;
+        } else if (len <= 35) {
+            size = baseSize + 1.0;
+        } else if (len <= 50) {
+            size = baseSize - 1.0;
+        } else if (len <= 75) {
+            size = baseSize - 3.0;
+        } else {
+            size = baseSize - 5.0;
+        }
+        return MAX(14.0, MIN(size, 32.0));
+    } else {
+        if (len <= 30) {
+            size = baseSize - 4.0;
+        } else if (len <= 60) {
+            size = baseSize - 5.0;
+        } else {
+            size = baseSize - 6.0;
+        }
+        return MAX(11.0, MIN(size, 24.0));
+    }
+}
 
 - (void)refreshFromPreferencesAnimated:(BOOL)animated {
     NSString *domainStr = lrpStr("com.locklyrics.preferences");
@@ -397,6 +841,12 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     }
     if (fSize < 12.0) fSize = 20.0;
     self.fontSize = fSize;
+
+    // Auto Font Size (default YES)
+    Boolean autoKeyExists = false;
+    NSString *autoFontKey = lrpStr("autoFontSize");
+    Boolean autoVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)autoFontKey, domain, &autoKeyExists);
+    self.autoFontSize = autoKeyExists ? (BOOL)autoVal : YES;
 
     // Alignment preset (default 0 = Custom)
     NSInteger preset = 0;
@@ -452,7 +902,11 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     targetY = MAX(self.minY, MIN(targetY, self.maxY));
     self.currentCenterY = targetY;
 
-    // Rebuild sample lyric labels
+    if (!self.previewSongLines || self.previewSongLines.count == 0) {
+        [self loadRandomCachedSong];
+    }
+
+    [self updateMediaCardMetadata];
     [self rebuildPreviewLyricsLabels];
 
     // Sync slider bounds & value
@@ -471,52 +925,61 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     }
     [self.lyricsLabels removeAllObjects];
 
-    NSArray<NSString *> *samples = nil;
-    if (self.visibleLinesCount == 1) {
-        samples = @[lrpStr("Dancing in the moonlight")];
-    } else if (self.visibleLinesCount == 5) {
-        samples = @[
-            lrpStr("Waiting for the night to fall"),
-            lrpStr("Every step brings me closer"),
-            lrpStr("Dancing in the moonlight"),
-            lrpStr("Underneath the starlit sky"),
-            lrpStr("Never let this moment fade")
-        ];
-    } else {
-        samples = @[
-            lrpStr("Every step brings me closer"),
-            lrpStr("Dancing in the moonlight"),
-            lrpStr("Underneath the starlit sky")
-        ];
-    }
-
-    NSInteger count = (NSInteger)samples.count;
-    NSInteger centerIdx = count / 2;
+    NSInteger count = self.visibleLinesCount;
+    if (count != 1 && count != 3 && count != 5) count = 3;
+    NSInteger half = count / 2;
 
     UILabel *centerLabel = nil;
     UILabel *firstSideLabel = nil;
+    NSInteger totalLines = (NSInteger)self.previewSongLines.count;
+    NSInteger activeIdx = self.previewLineIndex;
 
-    for (NSInteger i = 0; i < count; i++) {
+    for (NSInteger offset = -half; offset <= half; offset++) {
         UILabel *label = [[UILabel alloc] init];
-        label.text = samples[i];
         label.textAlignment = NSTextAlignmentCenter;
         label.textColor = [UIColor whiteColor];
         label.translatesAutoresizingMaskIntoConstraints = NO;
         label.adjustsFontSizeToFitWidth = YES;
-        label.minimumScaleFactor = 0.55;
 
-        if (i == centerIdx) {
-            CGFloat scaledFont = MAX(5.5, self.fontSize * self.previewScale);
-            label.font = [UIFont systemFontOfSize:scaledFont weight:UIFontWeightBold];
-            label.alpha = 1.0;
-            label.numberOfLines = 2;
-            centerLabel = label;
+        NSInteger targetIdx = activeIdx + offset;
+        BOOL isCenter = (offset == 0);
+
+        if (targetIdx >= 0 && targetIdx < totalLines) {
+            NSString *text = self.previewSongLines[targetIdx].text;
+            label.text = text;
+            CGFloat rawFont = [self fontSizeForText:text isCenterLine:isCenter];
+
+            if (isCenter) {
+                CGFloat scaledFont = MAX(5.0, rawFont * self.previewScale);
+                label.font = [UIFont systemFontOfSize:scaledFont weight:UIFontWeightBold];
+                label.alpha = 1.0;
+                label.numberOfLines = 2;
+                label.minimumScaleFactor = 0.60;
+                label.lineBreakMode = NSLineBreakByTruncatingTail;
+                centerLabel = label;
+            } else {
+                CGFloat scaledFont = MAX(4.2, rawFont * self.previewScale);
+                label.font = [UIFont systemFontOfSize:scaledFont weight:UIFontWeightMedium];
+                label.alpha = (ABS(offset) == 1) ? 0.45 : 0.25;
+                label.numberOfLines = 1;
+                label.minimumScaleFactor = 0.70;
+                label.lineBreakMode = NSLineBreakByTruncatingTail;
+                if (!firstSideLabel) firstSideLabel = label;
+            }
         } else {
-            CGFloat sideFont = MAX(4.5, MAX(self.fontSize - 4.0, 12.0) * self.previewScale);
-            label.font = [UIFont systemFontOfSize:sideFont weight:UIFontWeightMedium];
-            label.alpha = (ABS(i - centerIdx) == 1) ? 0.45 : 0.25;
-            label.numberOfLines = 1;
-            if (!firstSideLabel) firstSideLabel = label;
+            label.text = lrpStr(" ");
+            label.alpha = 0.0;
+            if (isCenter) {
+                CGFloat scaledFont = MAX(5.0, self.fontSize * self.previewScale);
+                label.font = [UIFont systemFontOfSize:scaledFont weight:UIFontWeightBold];
+                label.numberOfLines = 2;
+                centerLabel = label;
+            } else {
+                CGFloat scaledFont = MAX(4.2, MAX(self.fontSize - 4.0, 12.0) * self.previewScale);
+                label.font = [UIFont systemFontOfSize:scaledFont weight:UIFontWeightMedium];
+                label.numberOfLines = 1;
+                if (!firstSideLabel) firstSideLabel = label;
+            }
         }
 
         [self.lyricsStackView addArrangedSubview:label];
@@ -528,8 +991,9 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
         cCenter.priority = (UILayoutPriority)999;
         cCenter.active = YES;
 
-        for (NSInteger i = 0; i < count; i++) {
-            if (i != centerIdx && self.lyricsLabels[i] != firstSideLabel) {
+        NSInteger centerLabelIdx = half;
+        for (NSInteger i = 0; i < (NSInteger)self.lyricsLabels.count; i++) {
+            if (i != centerLabelIdx && self.lyricsLabels[i] != firstSideLabel) {
                 NSLayoutConstraint *cOther = [self.lyricsLabels[i].heightAnchor constraintEqualToAnchor:firstSideLabel.heightAnchor];
                 cOther.priority = (UILayoutPriority)999;
                 cOther.active = YES;
@@ -573,7 +1037,22 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     self.valueLabel.text = lrpStr(valBuf);
 }
 
-#pragma mark - Slider & Tap Actions
+#pragma mark - Slider, Tap & Shuffle Actions
+
+- (void)handleShuffleTap:(UIButton *)sender {
+    [self.hapticGenerator selectionChanged];
+    [self.hapticGenerator prepare];
+
+    [self loadRandomCachedSong];
+    [self updateMediaCardMetadata];
+    [UIView transitionWithView:self.lyricsStackView
+                      duration:0.15
+                       options:UIViewAnimationOptionTransitionCrossDissolve
+                    animations:^{
+                        [self rebuildPreviewLyricsLabels];
+                    }
+                    completion:nil];
+}
 
 - (void)sliderTouchDown:(UISlider *)slider {
     self.isDraggingSlider = YES;

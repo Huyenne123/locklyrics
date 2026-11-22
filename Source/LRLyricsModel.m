@@ -1,4 +1,5 @@
 #import "LRLyricsModel.h"
+#import <ctype.h>
 
 @implementation LRLyricLine
 
@@ -107,6 +108,9 @@
             if (matched == 2) {
                 NSTimeInterval total = (min * 60.0) + sec;
                 [timestamps addObject:@(total)];
+                ptr = endBracket + 1;
+            } else if (endBracket > startBracket + 1 && isdigit((unsigned char)startBracket[1]) && sscanf(startBracket, "[%lf]", &sec) == 1) {
+                [timestamps addObject:@(sec)];
                 ptr = endBracket + 1;
             } else {
                 ptr = endBracket + 1;

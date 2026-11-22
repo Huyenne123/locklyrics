@@ -677,7 +677,9 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
                     }
                     if (lineText.length == 0) lineText = @"•••";
                     [parsedLines addObject:[[LRLyricLine alloc] initWithTime:time text:lineText]];
-                    [lrcString appendFormat:@"[%.2f] %@\n", time, lineText];
+                    int lrcMin = (int)(time / 60.0);
+                    double lrcSec = time - (lrcMin * 60.0);
+                    [lrcString appendFormat:@"[%02d:%05.2f] %@\n", lrcMin, lrcSec, lineText];
                 }
             } else if ([type isEqualToString:@"Syllable"]) {
                 for (NSDictionary *lineDict in content) {
@@ -733,7 +735,9 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
                     }
                     if (clean.length == 0) clean = @"•••";
                     [parsedLines addObject:[[LRLyricLine alloc] initWithTime:time text:clean]];
-                    [lrcString appendFormat:@"[%.2f] %@\n", time, clean];
+                    int lrcMin = (int)(time / 60.0);
+                    double lrcSec = time - (lrcMin * 60.0);
+                    [lrcString appendFormat:@"[%02d:%05.2f] %@\n", lrcMin, lrcSec, clean];
                 }
             }
 
