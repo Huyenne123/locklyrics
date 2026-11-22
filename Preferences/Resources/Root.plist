@@ -129,7 +129,17 @@ Blacklist: All apps display lyrics except selected apps.</string>
 			<key>label</key>
 			<string>Position</string>
 			<key>footerText</key>
-			<string>You can also drag the lyrics directly on your lockscreen anytime to reposition them!</string>
+			<string>Use the Y Position slider, tap anywhere on the lock screen preview, or drag the lyrics directly on your lockscreen anytime to reposition them!</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSStaticTextCell</string>
+			<key>cellClass</key>
+			<string>LRPLockScreenPreviewCell</string>
+			<key>height</key>
+			<integer>444</integer>
+			<key>id</key>
+			<string>lockScreenPreviewCell</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -140,6 +150,8 @@ Blacklist: All apps display lyrics except selected apps.</string>
 			<integer>0</integer>
 			<key>defaults</key>
 			<string>com.locklyrics.preferences</string>
+			<key>id</key>
+			<string>alignmentPreset</string>
 			<key>key</key>
 			<string>alignmentPreset</string>
 			<key>label</key>
@@ -351,7 +363,7 @@ Blacklist: All apps display lyrics except selected apps.</string>
 			<key>label</key>
 			<string>About</string>
 			<key>footerText</key>
-			<string>Lyrics provided by LRCLIB and Musixmatch. LockLyrics is open source.</string>
+			<string>Lyrics provided by LRCLIB, lrc.red, Musixmatch, and SpicyLyrics. LockLyrics is open source.</string>
 		</dict>
 	</array>
 	<key>title</key>

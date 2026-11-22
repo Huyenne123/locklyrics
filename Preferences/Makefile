@@ -6,8 +6,8 @@ include $(THEOS)/makefiles/common.mk
 
 BUNDLE_NAME = LockLyricsPrefs
 
-LockLyricsPrefs_FILES = LRPRootListController.m
-LockLyricsPrefs_FRAMEWORKS = UIKit
+LockLyricsPrefs_FILES = LRPRootListController.m LRPLockScreenPreviewCell.m
+LockLyricsPrefs_FRAMEWORKS = UIKit QuartzCore
 LockLyricsPrefs_PRIVATE_FRAMEWORKS = Preferences
 LockLyricsPrefs_INSTALL_PATH = /Library/PreferenceBundles
 LockLyricsPrefs_CFLAGS = -fobjc-arc -I../Headers

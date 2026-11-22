@@ -1,4 +1,5 @@
 #import "LRPRootListController.h"
+#import "LRPLockScreenPreviewCell.h"
 #import <notify.h>
 #import <dirent.h>
 #import <unistd.h>
@@ -76,11 +77,27 @@ static void clearLyricsCacheFiles(void) {
 - (void)viewDidLoad {
     loadAltListFramework();
     [super viewDidLoad];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handlePositionChangedBySlider:)
+                                                 name:LRPPositionChangedBySliderNotification
+                                               object:nil];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)handlePositionChangedBySlider:(NSNotification *)note {
+    [self reloadSpecifierID:@"alignmentPreset" animated:NO];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     loadAltListFramework();
     [super viewWillAppear:animated];
+    [[NSNotificationCenter defaultCenter] postNotificationName:LRPPreviewNeedsRefreshNotification
+                                                        object:nil
+                                                      userInfo:@{@"animated": @NO}];
 }
 
 - (NSArray *)specifiers {
@@ -126,7 +143,25 @@ static void clearLyricsCacheFiles(void) {
     NSString *key = [specifier propertyForKey:@"key"];
     if ([key isEqualToString:@"appFilterMode"]) {
         [self reloadSpecifiers];
+    } else if ([key isEqualToString:@"alignmentPreset"] ||
+               [key isEqualToString:@"visibleLinesCount"] ||
+               [key isEqualToString:@"fontSize"] ||
+               [key isEqualToString:@"autoFontSize"]) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:LRPPreviewNeedsRefreshNotification
+                                                            object:nil
+                                                          userInfo:@{@"animated": @YES}];
     }
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    PSSpecifier *specifier = [self specifierAtIndexPath:indexPath];
+    if (specifier) {
+        NSString *specId = [specifier propertyForKey:@"id"];
+        if ([specId isEqualToString:@"lockScreenPreviewCell"]) {
+            return 444.0;
+        }
+    }
+    return [super tableView:tableView heightForRowAtIndexPath:indexPath];
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -160,6 +195,11 @@ static void clearLyricsCacheFiles(void) {
     CFPreferencesAppSynchronize((__bridge CFStringRef)@"com.locklyrics.preferences");
 
     notify_post("com.locklyrics.preferences.changed");
+
+    [self reloadSpecifierID:@"alignmentPreset" animated:NO];
+    [[NSNotificationCenter defaultCenter] postNotificationName:LRPPreviewNeedsRefreshNotification
+                                                        object:nil
+                                                      userInfo:@{@"animated": @YES}];
 
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Reset Position"
                                                                    message:@"Lyrics position has been reset to default."
