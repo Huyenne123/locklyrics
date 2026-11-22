@@ -3,6 +3,14 @@
 
 @interface SpringBoard : UIApplication
 - (void)applicationDidFinishLaunching:(id)application;
+- (void)frontDisplayDidChange:(id)newDisplay;
+- (id)_accessibilityFrontMostApplication;
+@end
+
+@interface SBHomeScreenViewController : UIViewController
+@end
+
+@interface SBRootFolderController : UIViewController
 @end
 
 @interface SBApplication : NSObject

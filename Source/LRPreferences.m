@@ -110,6 +110,10 @@
     Boolean dynWallVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"enableDynamicWallpaper", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
     self.enableDynamicWallpaper = keyExistsAndHasValidFormat ? dynWallVal : YES;
 
+    // Show Dynamic Wallpaper on Home Screen (without lyrics)
+    Boolean homeWallVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"enableHomeScreenWallpaper", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
+    self.enableHomeScreenWallpaper = keyExistsAndHasValidFormat ? homeWallVal : YES;
+
     // Lyrics in Wallpaper Layer
     Boolean wallLayerVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"lyricsInWallpaperLayer", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
     self.lyricsInWallpaperLayer = keyExistsAndHasValidFormat ? wallLayerVal : YES;

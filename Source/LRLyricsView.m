@@ -256,9 +256,11 @@
 
 - (void)reloadData {
     LRPreferences *prefs = [LRPreferences sharedPreferences];
-    if (!prefs.enabled) {
+    if (!prefs.enabled || !self.isLockscreenActive) {
         [self stopSyncTimer];
+        [self.layer removeAllAnimations];
         self.hidden = YES;
+        self.alpha = 0.0;
         return;
     }
 

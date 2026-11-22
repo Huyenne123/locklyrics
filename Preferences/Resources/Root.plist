@@ -216,9 +216,10 @@ Blacklist: All apps display lyrics except selected apps.</string>
 			<key>label</key>
 			<string>Dynamic Wallpaper</string>
 			<key>footerText</key>
-			<string>Renders a live Metal mesh gradient sampled from album art directly in the Lock Screen wallpaper layer.
+			<string>Renders a live Metal mesh gradient sampled from album art directly in the wallpaper layer.
+"Show on Home Screen" displays the album-art mesh gradient behind Home Screen icons without lyrics.
 Top slider: Opacity (0.2–1.0) • Bottom slider: Animation Speed (0.0–2.0).
-"Lyrics in Wallpaper Layer" places lyrics behind notifications and blur cards (disable for direct Lock Screen dragging). Automatically pauses GPU rendering when sleeping, paused, or unlocked.</string>
+"Lyrics in Wallpaper Layer" places lyrics behind notifications and blur cards (disable for direct Lock Screen dragging). Automatically pauses GPU rendering when sleeping, paused, or inside an app.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -231,6 +232,20 @@ Top slider: Opacity (0.2–1.0) • Bottom slider: Animation Speed (0.0–2.0).
 			<string>enableDynamicWallpaper</string>
 			<key>label</key>
 			<string>Dynamic Album-Art Wallpaper</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>enableHomeScreenWallpaper</string>
+			<key>label</key>
+			<string>Show on Home Screen</string>
 			<key>PostNotification</key>
 			<string>com.locklyrics.preferences.changed</string>
 		</dict>

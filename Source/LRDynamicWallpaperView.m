@@ -218,42 +218,53 @@ static simd_float4 lrColorToLAB4(UIColor *color) {
 }
 
 - (void)setupMetalPipeline {
-    id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
-    id<MTLCommandQueue> queue = dev ? [dev newCommandQueue] : nil;
+    static id<MTLDevice> sharedDevice = nil;
+    static id<MTLCommandQueue> sharedQueue = nil;
+    static id<MTLComputePipelineState> sharedPipeline = nil;
+    static dispatch_once_t onceToken;
 
-    if (dev && queue) {
-        NSError *libErr = nil;
-        id<MTLLibrary> lib = [dev newLibraryWithSource:kLRMeshMetalShaderSource options:nil error:&libErr];
-        id<MTLFunction> fn = lib ? [lib newFunctionWithName:@"lr_blend_colors"] : nil;
-        NSError *pipeErr = nil;
-        id<MTLComputePipelineState> pipe = fn ? [dev newComputePipelineStateWithFunction:fn error:&pipeErr] : nil;
-
-        if (pipe) {
-            _device = dev;
-            _commandQueue = queue;
-            _pipelineState = pipe;
-            _metalReady = YES;
-
-            CAMetalLayer *ml = (CAMetalLayer *)self.layer;
-            ml.device = dev;
-            ml.pixelFormat = MTLPixelFormatBGRA8Unorm;
-            CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-            if (cs) {
-                ml.colorspace = cs;
-                CGColorSpaceRelease(cs);
+    dispatch_once(&onceToken, ^{
+        id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
+        id<MTLCommandQueue> queue = dev ? [dev newCommandQueue] : nil;
+        if (dev && queue) {
+            NSError *libErr = nil;
+            id<MTLLibrary> lib = [dev newLibraryWithSource:kLRMeshMetalShaderSource options:nil error:&libErr];
+            id<MTLFunction> fn = lib ? [lib newFunctionWithName:@"lr_blend_colors"] : nil;
+            NSError *pipeErr = nil;
+            id<MTLComputePipelineState> pipe = fn ? [dev newComputePipelineStateWithFunction:fn error:&pipeErr] : nil;
+            if (pipe) {
+                sharedDevice = dev;
+                sharedQueue = queue;
+                sharedPipeline = pipe;
             }
-            ml.framebufferOnly = NO;
-            ml.opaque = NO;
-            ml.presentsWithTransaction = NO;
-            ml.allowsNextDrawableTimeout = NO;
-            ml.actions = @{
-                @"position": [NSNull null],
-                @"bounds": [NSNull null],
-                @"frame": [NSNull null],
-                @"contents": [NSNull null]
-            };
-            return;
         }
+    });
+
+    if (sharedPipeline && sharedDevice && sharedQueue) {
+        _device = sharedDevice;
+        _commandQueue = sharedQueue;
+        _pipelineState = sharedPipeline;
+        _metalReady = YES;
+
+        CAMetalLayer *ml = (CAMetalLayer *)self.layer;
+        ml.device = sharedDevice;
+        ml.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        if (cs) {
+            ml.colorspace = cs;
+            CGColorSpaceRelease(cs);
+        }
+        ml.framebufferOnly = NO;
+        ml.opaque = NO;
+        ml.presentsWithTransaction = NO;
+        ml.allowsNextDrawableTimeout = NO;
+        ml.actions = @{
+            @"position": [NSNull null],
+            @"bounds": [NSNull null],
+            @"frame": [NSNull null],
+            @"contents": [NSNull null]
+        };
+        return;
     }
 
     // Fallback CAGradientLayer if Metal compute pipeline cannot be initialized

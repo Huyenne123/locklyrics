@@ -11,6 +11,11 @@
     [[LRLyricsManager sharedManager] startMonitoring];
 }
 
+- (void)frontDisplayDidChange:(id)newDisplay {
+    %orig;
+    [[LRWallpaperController sharedController] frontDisplayDidChange:newDisplay];
+}
+
 %end
 
 %hook PBUIPosterLockViewController
@@ -28,6 +33,63 @@
 - (void)viewDidLayoutSubviews {
     %orig;
     [[LRWallpaperController sharedController] attachToPosterLockViewController:self];
+}
+
+%end
+
+%hook PBUIPosterHomeViewController
+
+- (void)viewDidLoad {
+    %orig;
+    [[LRWallpaperController sharedController] attachToPosterHomeViewController:self];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    [[LRWallpaperController sharedController] attachToPosterHomeViewController:self];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    [[LRWallpaperController sharedController] attachToPosterHomeViewController:self];
+}
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [[LRWallpaperController sharedController] attachToPosterHomeViewController:self];
+}
+
+%end
+
+%hook SBHomeScreenViewController
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    [[LRWallpaperController sharedController] setHomeScreenVisible:YES];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    [[LRWallpaperController sharedController] setHomeScreenVisible:YES];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    [[LRWallpaperController sharedController] setHomeScreenVisible:NO];
+}
+
+%end
+
+%hook SBRootFolderController
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    [[LRWallpaperController sharedController] setHomeScreenVisible:YES];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    [[LRWallpaperController sharedController] setHomeScreenVisible:NO];
 }
 
 %end
@@ -86,6 +148,11 @@
 
     // Fetch latest now playing info to update lyrics & artwork on lock screen reveal
     [[LRLyricsManager sharedManager] fetchLatestNowPlayingInfo];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    [[LRWallpaperController sharedController] setLockScreenVisible:YES];
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
