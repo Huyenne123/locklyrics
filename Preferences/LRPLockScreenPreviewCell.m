@@ -1,11 +1,14 @@
 #import "LRPLockScreenPreviewCell.h"
+#import <Preferences/PSSpecifier.h>
 #import <QuartzCore/QuartzCore.h>
 #import <notify.h>
+#import <stdio.h>
+#import <time.h>
 
-NSString * const LRPPreviewNeedsRefreshNotification = @"LRPPreviewNeedsRefreshNotification";
-NSString * const LRPPositionChangedBySliderNotification = @"LRPPositionChangedBySliderNotification";
+static inline NSString *lrpStr(const char *s) {
+    return s ? [NSString stringWithUTF8String:s] : [NSString string];
+}
 
-static NSString * const kLRPPrefsDomain = @"com.locklyrics.preferences";
 static const char * const kLRPPrefsChangedNotification = "com.locklyrics.preferences.changed";
 
 @interface LRPLockScreenPreviewCell ()
@@ -53,25 +56,15 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
         _lyricsLabels = [NSMutableArray array];
         _hapticGenerator = [[UISelectionFeedbackGenerator alloc] init];
 
+        if (specifier && specifier.target && [specifier.target conformsToProtocol:@protocol(LRPLockScreenPreviewCellDelegate)]) {
+            _delegate = specifier.target;
+        }
+
         [self computeScreenMetrics];
         [self buildUI];
         [self refreshFromPreferencesAnimated:NO];
-
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(handleRefreshNotification:)
-                                                     name:LRPPreviewNeedsRefreshNotification
-                                                   object:nil];
     }
     return self;
-}
-
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)handleRefreshNotification:(NSNotification *)note {
-    BOOL animated = [note.userInfo[@"animated"] boolValue];
-    [self refreshFromPreferencesAnimated:animated];
 }
 
 - (void)computeScreenMetrics {
@@ -168,7 +161,7 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     // 4. Slider Header Row ("Y Position" + live readout)
     self.titleLabelCustom = [[UILabel alloc] init];
     self.titleLabelCustom.translatesAutoresizingMaskIntoConstraints = NO;
-    self.titleLabelCustom.text = @"Y Position";
+    self.titleLabelCustom.text = lrpStr("Y Position");
     self.titleLabelCustom.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightSemibold];
     self.titleLabelCustom.textColor = [UIColor labelColor];
     [container addSubview:self.titleLabelCustom];
@@ -185,8 +178,8 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     self.ySlider.translatesAutoresizingMaskIntoConstraints = NO;
     self.ySlider.continuous = YES;
     UIImageSymbolConfiguration *symConfig = [UIImageSymbolConfiguration configurationWithPointSize:13.0 weight:UIImageSymbolWeightMedium];
-    self.ySlider.minimumValueImage = [[UIImage systemImageNamed:@"arrow.up.to.line" withConfiguration:symConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    self.ySlider.maximumValueImage = [[UIImage systemImageNamed:@"arrow.down.to.line" withConfiguration:symConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    self.ySlider.minimumValueImage = [[UIImage systemImageNamed:lrpStr("arrow.up.to.line") withConfiguration:symConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    self.ySlider.maximumValueImage = [[UIImage systemImageNamed:lrpStr("arrow.down.to.line") withConfiguration:symConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 
     [self.ySlider addTarget:self action:@selector(sliderTouchDown:) forControlEvents:UIControlEventTouchDown];
     [self.ySlider addTarget:self action:@selector(sliderValueChanged:) forControlEvents:UIControlEventValueChanged];
@@ -243,22 +236,29 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     battery.userInteractionEnabled = NO;
     [self.screenView addSubview:battery];
 
-    // Date label
-    NSDateFormatter *dateFmt = [[NSDateFormatter alloc] init];
-    dateFmt.dateFormat = @"EEEE, MMM d";
+    // Pure C localtime_r + strftime to avoid iOS 18 Swift Foundation NSDateFormatter bridging
+    time_t now = time(NULL);
+    struct tm localTm;
+    localtime_r(&now, &localTm);
+
+    char dateBuf[64];
+    dateBuf[0] = '\0';
+    strftime(dateBuf, sizeof(dateBuf), "%A, %b %e", &localTm);
+
     UILabel *dateLabel = [[UILabel alloc] initWithFrame:CGRectMake(6.0, h * 0.10, w - 12.0, 11.0)];
-    dateLabel.text = [dateFmt stringFromDate:[NSDate date]];
+    dateLabel.text = lrpStr(dateBuf);
     dateLabel.textAlignment = NSTextAlignmentCenter;
     dateLabel.font = [UIFont systemFontOfSize:7.5 weight:UIFontWeightMedium];
     dateLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.82];
     dateLabel.userInteractionEnabled = NO;
     [self.screenView addSubview:dateLabel];
 
-    // Clock label
-    NSDateFormatter *timeFmt = [[NSDateFormatter alloc] init];
-    timeFmt.dateFormat = @"HH:mm";
+    char timeBuf[16];
+    timeBuf[0] = '\0';
+    strftime(timeBuf, sizeof(timeBuf), "%H:%M", &localTm);
+
     UILabel *clockLabel = [[UILabel alloc] initWithFrame:CGRectMake(6.0, h * 0.132, w - 12.0, 38.0)];
-    clockLabel.text = [timeFmt stringFromDate:[NSDate date]];
+    clockLabel.text = lrpStr(timeBuf);
     clockLabel.textAlignment = NSTextAlignmentCenter;
     UIFontDescriptor *desc = [[UIFont systemFontOfSize:32.0 weight:UIFontWeightBold] fontDescriptor];
     UIFontDescriptor *roundedDesc = [desc fontDescriptorWithDesign:UIFontDescriptorSystemDesignRounded];
@@ -311,7 +311,7 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 
     // Mini playback controls
     UIImageSymbolConfiguration *ctrlCfg = [UIImageSymbolConfiguration configurationWithPointSize:8.5 weight:UIImageSymbolWeightBold];
-    NSArray<NSString *> *icons = @[@"backward.fill", @"play.fill", @"forward.fill"];
+    NSArray<NSString *> *icons = @[lrpStr("backward.fill"), lrpStr("play.fill"), lrpStr("forward.fill")];
     CGFloat ctrlY = cardH * 0.72;
     CGFloat spacing = cardW / 4.0;
     for (NSInteger i = 0; i < 3; i++) {
@@ -331,7 +331,7 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     flashBtn.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.35];
     flashBtn.layer.cornerRadius = btnSize / 2.0;
     flashBtn.userInteractionEnabled = NO;
-    UIImageView *flashIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"flashlight.off.fill" withConfiguration:qaCfg]];
+    UIImageView *flashIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:lrpStr("flashlight.off.fill") withConfiguration:qaCfg]];
     flashIcon.tintColor = [UIColor colorWithWhite:1.0 alpha:0.85];
     flashIcon.contentMode = UIViewContentModeCenter;
     flashIcon.frame = flashBtn.bounds;
@@ -342,7 +342,7 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
     camBtn.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.35];
     camBtn.layer.cornerRadius = btnSize / 2.0;
     camBtn.userInteractionEnabled = NO;
-    UIImageView *camIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"camera.fill" withConfiguration:qaCfg]];
+    UIImageView *camIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:lrpStr("camera.fill") withConfiguration:qaCfg]];
     camIcon.tintColor = [UIColor colorWithWhite:1.0 alpha:0.85];
     camIcon.contentMode = UIViewContentModeCenter;
     camIcon.frame = camBtn.bounds;
@@ -368,12 +368,14 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 #pragma mark - Preferences & Preview Sync
 
 - (void)refreshFromPreferencesAnimated:(BOOL)animated {
-    CFStringRef domain = (__bridge CFStringRef)kLRPPrefsDomain;
+    NSString *domainStr = lrpStr("com.locklyrics.preferences");
+    CFStringRef domain = (__bridge CFStringRef)domainStr;
     CFPreferencesAppSynchronize(domain);
 
     // Visible lines count (default 3)
     NSInteger linesCount = 3;
-    CFPropertyListRef linesVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"visibleLinesCount", domain);
+    NSString *linesKey = lrpStr("visibleLinesCount");
+    CFPropertyListRef linesVal = CFPreferencesCopyAppValue((__bridge CFStringRef)linesKey, domain);
     if (linesVal && CFGetTypeID(linesVal) == CFNumberGetTypeID()) {
         linesCount = [(__bridge NSNumber *)linesVal integerValue];
         CFRelease(linesVal);
@@ -385,7 +387,8 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 
     // Font size (default 20.0)
     CGFloat fSize = 20.0;
-    CFPropertyListRef fontVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"fontSize", domain);
+    NSString *fontKey = lrpStr("fontSize");
+    CFPropertyListRef fontVal = CFPreferencesCopyAppValue((__bridge CFStringRef)fontKey, domain);
     if (fontVal && CFGetTypeID(fontVal) == CFNumberGetTypeID()) {
         fSize = [(__bridge NSNumber *)fontVal doubleValue];
         CFRelease(fontVal);
@@ -397,7 +400,8 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 
     // Alignment preset (default 0 = Custom)
     NSInteger preset = 0;
-    CFPropertyListRef presetVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"alignmentPreset", domain);
+    NSString *presetKey = lrpStr("alignmentPreset");
+    CFPropertyListRef presetVal = CFPreferencesCopyAppValue((__bridge CFStringRef)presetKey, domain);
     if (presetVal && CFGetTypeID(presetVal) == CFNumberGetTypeID()) {
         preset = [(__bridge NSNumber *)presetVal integerValue];
         CFRelease(presetVal);
@@ -408,7 +412,8 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 
     // Custom Center Y
     CGFloat savedY = -1.0;
-    CFPropertyListRef yVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"customCenterY", domain);
+    NSString *yKey = lrpStr("customCenterY");
+    CFPropertyListRef yVal = CFPreferencesCopyAppValue((__bridge CFStringRef)yKey, domain);
     if (yVal && CFGetTypeID(yVal) == CFNumberGetTypeID()) {
         savedY = [(__bridge NSNumber *)yVal doubleValue];
         CFRelease(yVal);
@@ -468,20 +473,20 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 
     NSArray<NSString *> *samples = nil;
     if (self.visibleLinesCount == 1) {
-        samples = @[@"Dancing in the moonlight"];
+        samples = @[lrpStr("Dancing in the moonlight")];
     } else if (self.visibleLinesCount == 5) {
         samples = @[
-            @"Waiting for the night to fall",
-            @"Every step brings me closer",
-            @"Dancing in the moonlight",
-            @"Underneath the starlit sky",
-            @"Never let this moment fade"
+            lrpStr("Waiting for the night to fall"),
+            lrpStr("Every step brings me closer"),
+            lrpStr("Dancing in the moonlight"),
+            lrpStr("Underneath the starlit sky"),
+            lrpStr("Never let this moment fade")
         ];
     } else {
         samples = @[
-            @"Every step brings me closer",
-            @"Dancing in the moonlight",
-            @"Underneath the starlit sky"
+            lrpStr("Every step brings me closer"),
+            lrpStr("Dancing in the moonlight"),
+            lrpStr("Underneath the starlit sky")
         ];
     }
 
@@ -563,7 +568,9 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 - (void)updateValueReadout {
     int percent = (int)llround((self.currentCenterY / self.deviceScreenHeight) * 100.0);
     int pts = (int)llround(self.currentCenterY);
-    self.valueLabel.text = [NSString stringWithFormat:@"%d%% (%d pt)", percent, pts];
+    char valBuf[32];
+    snprintf(valBuf, sizeof(valBuf), "%d%% (%d pt)", percent, pts);
+    self.valueLabel.text = lrpStr(valBuf);
 }
 
 #pragma mark - Slider & Tap Actions
@@ -623,16 +630,22 @@ static const char * const kLRPPrefsChangedNotification = "com.locklyrics.prefere
 }
 
 - (void)saveCurrentYPosition {
-    CFStringRef domain = (__bridge CFStringRef)kLRPPrefsDomain;
+    NSString *domainStr = lrpStr("com.locklyrics.preferences");
+    CFStringRef domain = (__bridge CFStringRef)domainStr;
     self.alignmentPreset = 0; // Custom / Draggable
 
-    CFPreferencesSetAppValue((__bridge CFStringRef)@"customCenterY", (__bridge CFNumberRef)@(self.currentCenterY), domain);
-    CFPreferencesSetAppValue((__bridge CFStringRef)@"alignmentPreset", (__bridge CFNumberRef)@(0), domain);
+    NSString *yKey = lrpStr("customCenterY");
+    NSString *presetKey = lrpStr("alignmentPreset");
+    CFPreferencesSetAppValue((__bridge CFStringRef)yKey, (__bridge CFNumberRef)@(self.currentCenterY), domain);
+    CFPreferencesSetAppValue((__bridge CFStringRef)presetKey, (__bridge CFNumberRef)@(0), domain);
     CFPreferencesAppSynchronize(domain);
 
     notify_post(kLRPPrefsChangedNotification);
 
-    [[NSNotificationCenter defaultCenter] postNotificationName:LRPPositionChangedBySliderNotification object:nil];
+    id<LRPLockScreenPreviewCellDelegate> del = self.delegate;
+    if (del && [del respondsToSelector:@selector(previewCellDidChangePosition:)]) {
+        [del previewCellDidChangePosition:self];
+    }
 }
 
 @end

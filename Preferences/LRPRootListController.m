@@ -66,6 +66,10 @@ static void clearLyricsCacheFiles(void) {
     closedir(d);
 }
 
+@interface LRPRootListController () <LRPLockScreenPreviewCellDelegate>
+@property (nonatomic, weak) LRPLockScreenPreviewCell *previewCell;
+@end
+
 @implementation LRPRootListController
 
 + (void)initialize {
@@ -77,27 +81,16 @@ static void clearLyricsCacheFiles(void) {
 - (void)viewDidLoad {
     loadAltListFramework();
     [super viewDidLoad];
-
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(handlePositionChangedBySlider:)
-                                                 name:LRPPositionChangedBySliderNotification
-                                               object:nil];
 }
 
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)handlePositionChangedBySlider:(NSNotification *)note {
-    [self reloadSpecifierID:@"alignmentPreset" animated:NO];
+- (void)previewCellDidChangePosition:(LRPLockScreenPreviewCell *)cell {
+    [self reloadSpecifierID:[NSString stringWithUTF8String:"alignmentPreset"] animated:NO];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     loadAltListFramework();
     [super viewWillAppear:animated];
-    [[NSNotificationCenter defaultCenter] postNotificationName:LRPPreviewNeedsRefreshNotification
-                                                        object:nil
-                                                      userInfo:@{@"animated": @NO}];
+    [self.previewCell refreshFromPreferencesAnimated:NO];
 }
 
 - (NSArray *)specifiers {
@@ -147,10 +140,18 @@ static void clearLyricsCacheFiles(void) {
                [key isEqualToString:@"visibleLinesCount"] ||
                [key isEqualToString:@"fontSize"] ||
                [key isEqualToString:@"autoFontSize"]) {
-        [[NSNotificationCenter defaultCenter] postNotificationName:LRPPreviewNeedsRefreshNotification
-                                                            object:nil
-                                                          userInfo:@{@"animated": @YES}];
+        [self.previewCell refreshFromPreferencesAnimated:YES];
     }
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
+    if ([cell isKindOfClass:[LRPLockScreenPreviewCell class]]) {
+        LRPLockScreenPreviewCell *preview = (LRPLockScreenPreviewCell *)cell;
+        preview.delegate = self;
+        self.previewCell = preview;
+    }
+    return cell;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -196,10 +197,8 @@ static void clearLyricsCacheFiles(void) {
 
     notify_post("com.locklyrics.preferences.changed");
 
-    [self reloadSpecifierID:@"alignmentPreset" animated:NO];
-    [[NSNotificationCenter defaultCenter] postNotificationName:LRPPreviewNeedsRefreshNotification
-                                                        object:nil
-                                                      userInfo:@{@"animated": @YES}];
+    [self reloadSpecifierID:[NSString stringWithUTF8String:"alignmentPreset"] animated:NO];
+    [self.previewCell refreshFromPreferencesAnimated:YES];
 
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Reset Position"
                                                                    message:@"Lyrics position has been reset to default."

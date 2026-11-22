@@ -1,9 +1,15 @@
 #import <Preferences/PSTableCell.h>
 
-extern NSString * const LRPPreviewNeedsRefreshNotification;
-extern NSString * const LRPPositionChangedBySliderNotification;
+@class LRPLockScreenPreviewCell;
+
+@protocol LRPLockScreenPreviewCellDelegate <NSObject>
+@optional
+- (void)previewCellDidChangePosition:(LRPLockScreenPreviewCell *)cell;
+@end
 
 @interface LRPLockScreenPreviewCell : PSTableCell
+
+@property (nonatomic, weak) id<LRPLockScreenPreviewCellDelegate> delegate;
 
 - (void)refreshFromPreferencesAnimated:(BOOL)animated;
 
