@@ -106,6 +106,51 @@
     Boolean highlightVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"highlightCurrentLine", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
     self.highlightCurrentLine = keyExistsAndHasValidFormat ? highlightVal : YES;
 
+    // Enable Dynamic Album-Art Wallpaper
+    Boolean dynWallVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"enableDynamicWallpaper", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
+    self.enableDynamicWallpaper = keyExistsAndHasValidFormat ? dynWallVal : YES;
+
+    // Lyrics in Wallpaper Layer
+    Boolean wallLayerVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"lyricsInWallpaperLayer", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
+    self.lyricsInWallpaperLayer = keyExistsAndHasValidFormat ? wallLayerVal : YES;
+
+    // Dynamic Wallpaper Opacity (0.20 .. 1.00, default 0.90)
+    CFPropertyListRef dynOpacityVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"dynamicWallpaperOpacity", kLRPreferencesIdentifier);
+    if (dynOpacityVal && CFGetTypeID(dynOpacityVal) == CFNumberGetTypeID()) {
+        CGFloat op = [(__bridge NSNumber *)dynOpacityVal doubleValue];
+        self.dynamicWallpaperOpacity = MAX(0.20, MIN(1.00, op));
+        CFRelease(dynOpacityVal);
+    } else {
+        if (dynOpacityVal) CFRelease(dynOpacityVal);
+        self.dynamicWallpaperOpacity = 0.90;
+    }
+
+    // Dynamic Wallpaper Speed (0.00 .. 2.00, default 0.60)
+    CFPropertyListRef dynSpeedVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"dynamicWallpaperSpeed", kLRPreferencesIdentifier);
+    if (dynSpeedVal && CFGetTypeID(dynSpeedVal) == CFNumberGetTypeID()) {
+        CGFloat sp = [(__bridge NSNumber *)dynSpeedVal doubleValue];
+        self.dynamicWallpaperSpeed = MAX(0.0, MIN(2.0, sp));
+        CFRelease(dynSpeedVal);
+    } else {
+        if (dynSpeedVal) CFRelease(dynSpeedVal);
+        self.dynamicWallpaperSpeed = 0.60;
+    }
+
+    // Dynamic Wallpaper FPS (15, 30, or 60, default 30)
+    CFPropertyListRef dynFpsVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"dynamicWallpaperFPS", kLRPreferencesIdentifier);
+    if (dynFpsVal && CFGetTypeID(dynFpsVal) == CFNumberGetTypeID()) {
+        NSInteger fps = [(__bridge NSNumber *)dynFpsVal integerValue];
+        CFRelease(dynFpsVal);
+        self.dynamicWallpaperFPS = (fps == 15 || fps == 30 || fps == 60) ? fps : 30;
+    } else {
+        if (dynFpsVal) CFRelease(dynFpsVal);
+        self.dynamicWallpaperFPS = 30;
+    }
+
+    // Dynamic Wallpaper Power Saver (Freeze in Low Power Mode)
+    Boolean dynPowerVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"dynamicWallpaperPowerSaver", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
+    self.dynamicWallpaperPowerSaver = keyExistsAndHasValidFormat ? dynPowerVal : YES;
+
     // Lyrics Provider
     CFPropertyListRef provVal = CFPreferencesCopyAppValue((__bridge CFStringRef)@"lyricsProvider", kLRPreferencesIdentifier);
     if (provVal && CFGetTypeID(provVal) == CFNumberGetTypeID()) {

@@ -1,4 +1,5 @@
 #import "LRLyricsManager.h"
+#import "LRColorExtractor.h"
 #import "LRPreferences.h"
 #import "MediaRemote.h"
 #import <CoreFoundation/CoreFoundation.h>
@@ -145,6 +146,9 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
 @property (nonatomic, strong) NSHashTable<id<LRLyricsObserver>> *observers;
 @property (nonatomic, assign) BOOL isMonitoring;
 @property (nonatomic, assign) BOOL isFetchingNowPlayingScheduled;
+@property (nonatomic, strong) dispatch_queue_t artworkQueue;
+@property (nonatomic, copy) NSString *lastArtworkFingerprint;
+@property (nonatomic, strong, readwrite) NSArray<UIColor *> *currentArtworkColors;
 
 @end
 
@@ -173,6 +177,7 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
 
         _playbackRate = 1.0f;
         _isPlaying = NO;
+        _artworkQueue = dispatch_queue_create("com.locklyrics.artwork", DISPATCH_QUEUE_SERIAL);
     }
     return self;
 }
@@ -217,6 +222,37 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
             }
         }
     });
+}
+
+- (void)notifyArtworkColorsUpdated:(NSArray<UIColor *> *)colors {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSArray *allObservers;
+        @synchronized (self.observers) {
+            allObservers = self.observers.allObjects;
+        }
+        for (id<LRLyricsObserver> obs in allObservers) {
+            if ([obs respondsToSelector:@selector(lyricsManagerDidUpdateArtworkColors:)]) {
+                [obs lyricsManagerDidUpdateArtworkColors:colors];
+            }
+        }
+    });
+}
+
+- (NSString *)fingerprintForArtworkData:(NSData *)data identifier:(NSString *)ident {
+    if (ident && [ident isKindOfClass:[NSString class]] && ident.length > 0) {
+        return [NSString stringWithFormat:@"id:%@:%lu", ident, (unsigned long)data.length];
+    }
+    NSUInteger len = data.length;
+    const uint8_t *bytes = (const uint8_t *)data.bytes;
+    uint32_t s0 = 0, s1 = 0, s2 = 0;
+    if (bytes && len >= 4) {
+        memcpy(&s0, bytes, 4);
+        memcpy(&s1, bytes + (len / 2 - 2), 4);
+        memcpy(&s2, bytes + (len - 4), 4);
+    }
+    char buf[96];
+    snprintf(buf, sizeof(buf), "len:%lu:%08x:%08x:%08x", (unsigned long)len, s0, s1, s2);
+    return [NSString stringWithUTF8String:buf];
 }
 
 #pragma mark - Offline Storage (Pure POSIX)
@@ -343,8 +379,11 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
     self.currentAlbum = nil;
     self.currentSong = nil;
     self.currentContentItem = nil;
+    self.lastArtworkFingerprint = nil;
+    self.currentArtworkColors = nil;
     self.isLoading = NO;
     [self notifySongUpdated:nil];
+    [self notifyArtworkColorsUpdated:nil];
 }
 
 - (void)checkAppAllowanceAndSync {
@@ -456,6 +495,30 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
         self.lastTimestamp = [NSDate date];
     }
 
+    // Process Now Playing Artwork for dynamic mesh gradient wallpaper
+    NSData *artworkData = info[kMRMediaRemoteNowPlayingInfoArtworkData];
+    NSString *artworkId = info[kMRMediaRemoteNowPlayingInfoArtworkIdentifier];
+    BOOL hasValidArtworkData = (artworkData && [artworkData isKindOfClass:[NSData class]] && artworkData.length > 0);
+    if (hasValidArtworkData) {
+        NSString *fp = [self fingerprintForArtworkData:artworkData identifier:artworkId];
+        if (![fp isEqualToString:self.lastArtworkFingerprint]) {
+            self.lastArtworkFingerprint = fp;
+            NSData *dataCopy = [artworkData copy];
+            __weak typeof(self) weakSelf = self;
+            dispatch_async(self.artworkQueue, ^{
+                NSArray<UIColor *> *palette = [LRColorExtractor extractPaletteFromImageData:dataCopy];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    __strong typeof(weakSelf) strongSelf = weakSelf;
+                    if (!strongSelf || ![strongSelf.lastArtworkFingerprint isEqualToString:fp]) {
+                        return;
+                    }
+                    strongSelf.currentArtworkColors = palette;
+                    [strongSelf notifyArtworkColorsUpdated:palette];
+                });
+            });
+        }
+    }
+
     // Only update track and fetch lyrics if a valid title is present in this dictionary
     if (title && [title isKindOfClass:[NSString class]] && title.length > 0) {
         if (artist && ![artist isKindOfClass:[NSString class]]) {
@@ -472,6 +535,13 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
             self.currentTitle = title;
             self.currentArtist = artist;
             self.currentAlbum = album;
+            if (!hasValidArtworkData) {
+                self.lastArtworkFingerprint = nil;
+                if (!self.currentArtworkColors) {
+                    self.currentArtworkColors = [LRColorExtractor defaultPalette];
+                    [self notifyArtworkColorsUpdated:self.currentArtworkColors];
+                }
+            }
             // Clear current song immediately so old song lyrics never persist!
             self.currentSong = nil;
             [self fetchLyricsForTrack:title artist:artist album:album duration:self.duration];
@@ -491,7 +561,10 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
     self.currentAlbum = nil;
     self.currentSong = nil;
     self.currentContentItem = nil;
+    self.lastArtworkFingerprint = nil;
+    self.currentArtworkColors = nil;
     [self notifySongUpdated:nil];
+    [self notifyArtworkColorsUpdated:nil];
 }
 
 - (void)updatePlaybackState:(BOOL)isPlaying {

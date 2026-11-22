@@ -176,10 +176,10 @@
     LRPreferences *prefs = [LRPreferences sharedPreferences];
     [prefs loadPreferences];
 
-    self.blurView.hidden = !prefs.enableBackgroundBlur;
+    self.blurView.hidden = prefs.enableDynamicWallpaper ? YES : !prefs.enableBackgroundBlur;
     self.blurView.alpha = prefs.backgroundAlpha;
 
-    BOOL canInteract = prefs.enableLiveDrag && !prefs.lockPosition;
+    BOOL canInteract = prefs.enableLiveDrag && !prefs.lockPosition && !prefs.lyricsInWallpaperLayer;
     self.userInteractionEnabled = canInteract;
     self.panGesture.enabled = canInteract;
 
@@ -188,8 +188,8 @@
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     LRPreferences *prefs = [LRPreferences sharedPreferences];
-    if (prefs.lockPosition || !prefs.enableLiveDrag) {
-        // Completely pass touches through to views underneath when locked or dragging disabled
+    if (prefs.lockPosition || !prefs.enableLiveDrag || prefs.lyricsInWallpaperLayer) {
+        // Completely pass touches through to views underneath when locked, in wallpaper layer, or dragging disabled
         return nil;
     }
     return [super hitTest:point withEvent:event];

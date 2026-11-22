@@ -39,6 +39,14 @@ typedef NS_ENUM(NSInteger, LRLyricsProvider) {
 @property (nonatomic, assign) BOOL showPlainLyricsIfNoSynced;
 @property (nonatomic, assign) BOOL highlightCurrentLine;
 
+// Dynamic Wallpaper & Layering
+@property (nonatomic, assign) BOOL enableDynamicWallpaper;
+@property (nonatomic, assign) BOOL lyricsInWallpaperLayer;
+@property (nonatomic, assign) CGFloat dynamicWallpaperOpacity;     // 0.20 .. 1.00, default 0.90
+@property (nonatomic, assign) CGFloat dynamicWallpaperSpeed;       // 0.00 .. 2.00, default 0.60
+@property (nonatomic, assign) NSInteger dynamicWallpaperFPS;       // 15, 30, or 60, default 30
+@property (nonatomic, assign) BOOL dynamicWallpaperPowerSaver;     // Freeze in Low Power Mode, default YES
+
 // Lyrics Provider
 @property (nonatomic, assign) LRLyricsProvider lyricsProvider;
 @property (nonatomic, copy) NSString *musixmatchUserToken;

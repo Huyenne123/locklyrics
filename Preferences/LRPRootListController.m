@@ -139,7 +139,9 @@ static void clearLyricsCacheFiles(void) {
     } else if ([key isEqualToString:@"alignmentPreset"] ||
                [key isEqualToString:@"visibleLinesCount"] ||
                [key isEqualToString:@"fontSize"] ||
-               [key isEqualToString:@"autoFontSize"]) {
+               [key isEqualToString:@"autoFontSize"] ||
+               [key isEqualToString:@"enableDynamicWallpaper"] ||
+               [key isEqualToString:@"dynamicWallpaperOpacity"]) {
         [self.previewCell refreshFromPreferencesAnimated:YES];
     }
 }

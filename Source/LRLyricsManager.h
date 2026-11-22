@@ -1,11 +1,13 @@
 #pragma once
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import "LRLyricsModel.h"
 
 @protocol LRLyricsObserver <NSObject>
 @optional
 - (void)lyricsManagerDidUpdateSong:(LRLyricsSong *)song;
 - (void)lyricsManagerDidChangePlaybackState:(BOOL)isPlaying;
+- (void)lyricsManagerDidUpdateArtworkColors:(NSArray<UIColor *> *)colors;
 @end
 
 @interface LRLyricsManager : NSObject
@@ -19,6 +21,7 @@
 @property (nonatomic, assign, readonly) BOOL isPlaying;
 @property (nonatomic, strong, readonly) LRLyricsSong *currentSong;
 @property (nonatomic, assign, readonly) BOOL isLoading;
+@property (nonatomic, strong, readonly) NSArray<UIColor *> *currentArtworkColors;
 @property (nonatomic, copy) NSString *nowPlayingBundleID;
 
 + (instancetype)sharedManager;

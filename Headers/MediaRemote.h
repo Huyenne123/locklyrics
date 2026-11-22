@@ -20,6 +20,8 @@ extern NSString *const kMRMediaRemoteNowPlayingInfoElapsedTime;
 extern NSString *const kMRMediaRemoteNowPlayingInfoPlaybackRate;
 extern NSString *const kMRMediaRemoteNowPlayingInfoTimestamp;
 extern NSString *const kMRMediaRemoteNowPlayingInfoUniqueIdentifier;
+extern NSString *const kMRMediaRemoteNowPlayingInfoArtworkData;
+extern NSString *const kMRMediaRemoteNowPlayingInfoArtworkIdentifier;
 
 typedef void (^MRMediaRemoteGetNowPlayingInfoCompletion)(CFDictionaryRef information);
 typedef void (^MRMediaRemoteGetNowPlayingApplicationIsPlayingCompletion)(Boolean isPlaying);

@@ -214,6 +214,119 @@ Blacklist: All apps display lyrics except selected apps.</string>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
+			<string>Dynamic Wallpaper</string>
+			<key>footerText</key>
+			<string>Renders a live Metal mesh gradient sampled from album art directly in the Lock Screen wallpaper layer.
+Top slider: Opacity (0.2–1.0) • Bottom slider: Animation Speed (0.0–2.0).
+"Lyrics in Wallpaper Layer" places lyrics behind notifications and blur cards (disable for direct Lock Screen dragging). Automatically pauses GPU rendering when sleeping, paused, or unlocked.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>enableDynamicWallpaper</string>
+			<key>label</key>
+			<string>Dynamic Album-Art Wallpaper</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>lyricsInWallpaperLayer</string>
+			<key>label</key>
+			<string>Lyrics in Wallpaper Layer</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSliderCell</string>
+			<key>default</key>
+			<real>0.9</real>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>dynamicWallpaperOpacity</string>
+			<key>min</key>
+			<real>0.2</real>
+			<key>max</key>
+			<real>1.0</real>
+			<key>showValue</key>
+			<true/>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSliderCell</string>
+			<key>default</key>
+			<real>0.6</real>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>dynamicWallpaperSpeed</string>
+			<key>min</key>
+			<real>0.0</real>
+			<key>max</key>
+			<real>2.0</real>
+			<key>showValue</key>
+			<true/>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSegmentCell</string>
+			<key>default</key>
+			<integer>30</integer>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>dynamicWallpaperFPS</string>
+			<key>validValues</key>
+			<array>
+				<integer>15</integer>
+				<integer>30</integer>
+				<integer>60</integer>
+			</array>
+			<key>validTitles</key>
+			<array>
+				<string>15 FPS</string>
+				<string>30 FPS</string>
+				<string>60 FPS</string>
+			</array>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>dynamicWallpaperPowerSaver</string>
+			<key>label</key>
+			<string>Freeze in Low Power Mode</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
 			<string>Appearance &amp; Font Size</string>
 			<key>footerText</key>
 			<string>Auto Font Size automatically optimizes size based on lyric length (short punchy lyrics appear larger, longer verses fit comfortably). Or use the slider to set a custom base size.</string>

@@ -24,3 +24,11 @@
 - (void)_nowPlayingInfoChanged;
 - (BOOL)_setNowPlayingApplication:(id)arg1;
 @end
+
+@interface SBBacklightController : NSObject
++ (instancetype)sharedInstance;
+@property (nonatomic, readonly) BOOL screenIsOn;
+- (void)turnOnScreenFullyWithBacklightSource:(long long)source;
+- (void)_notifyObserversWillAnimateToFactor:(float)factor source:(long long)source;
+- (void)_notifyObserversDidAnimateToFactor:(float)factor source:(long long)source;
+@end

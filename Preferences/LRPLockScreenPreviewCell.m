@@ -44,6 +44,8 @@ static const char * const kLRPOfflineLyricsDir = "/var/mobile/Library/LockLyrics
 @property (nonatomic, assign) NSInteger visibleLinesCount;
 @property (nonatomic, assign) CGFloat fontSize;
 @property (nonatomic, assign) BOOL autoFontSize;
+@property (nonatomic, assign) BOOL enableDynamicWallpaper;
+@property (nonatomic, assign) CGFloat dynamicWallpaperOpacity;
 @property (nonatomic, assign) NSInteger alignmentPreset;
 @property (nonatomic, assign) CGFloat currentCenterY;
 @property (nonatomic, assign) CGFloat minY;
@@ -593,8 +595,67 @@ static NSArray<LRPPreviewLine *> *lrpParseLrcUTF8(const char *utf8) {
 
 - (void)reloadRandomPreviewSong {
     [self loadRandomCachedSong];
+    [self updatePreviewWallpaperColorsAnimated:YES];
     [self updateMediaCardMetadata];
     [self rebuildPreviewLyricsLabels];
+}
+
+- (void)updatePreviewWallpaperColorsAnimated:(BOOL)animated {
+    if (!self.wallpaperGradient) return;
+
+    NSArray *cgColors = nil;
+    if (!self.enableDynamicWallpaper) {
+        cgColors = @[
+            (id)[UIColor colorWithRed:0.08 green:0.09 blue:0.11 alpha:1.0].CGColor,
+            (id)[UIColor colorWithRed:0.11 green:0.12 blue:0.15 alpha:1.0].CGColor,
+            (id)[UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0].CGColor
+        ];
+    } else {
+        static const CGFloat kPalettes[6][3][3] = {
+            // Deep teal & ocean indigo
+            {{0.06, 0.25, 0.34}, {0.09, 0.42, 0.46}, {0.05, 0.14, 0.26}},
+            // Midnight violet & berry
+            {{0.24, 0.11, 0.38}, {0.42, 0.16, 0.42}, {0.10, 0.12, 0.26}},
+            // Ember sunset & wine
+            {{0.42, 0.16, 0.18}, {0.48, 0.26, 0.14}, {0.16, 0.08, 0.14}},
+            // Aurora emerald & sapphire
+            {{0.08, 0.34, 0.30}, {0.12, 0.28, 0.50}, {0.06, 0.16, 0.22}},
+            // Twilight plum & cobalt
+            {{0.18, 0.16, 0.46}, {0.34, 0.14, 0.36}, {0.08, 0.10, 0.24}},
+            // Warm dusk gold & slate blue
+            {{0.36, 0.26, 0.12}, {0.16, 0.26, 0.40}, {0.10, 0.11, 0.18}}
+        };
+
+        unsigned long hash = 5381;
+        const char *titleC = [self.previewTrackName UTF8String];
+        const char *artistC = [self.previewArtistName UTF8String];
+        if (titleC) {
+            for (const char *p = titleC; *p; p++) hash = ((hash << 5) + hash) + (unsigned char)*p;
+        }
+        if (artistC) {
+            for (const char *p = artistC; *p; p++) hash = ((hash << 5) + hash) + (unsigned char)*p;
+        }
+        NSInteger pIdx = (NSInteger)(hash % 6);
+        CGFloat op = MAX(0.20, MIN(1.00, self.dynamicWallpaperOpacity));
+
+        NSMutableArray *blended = [NSMutableArray arrayWithCapacity:3];
+        for (int s = 0; s < 3; s++) {
+            CGFloat r = 0.07 + (kPalettes[pIdx][s][0] - 0.07) * op;
+            CGFloat g = 0.08 + (kPalettes[pIdx][s][1] - 0.08) * op;
+            CGFloat b = 0.10 + (kPalettes[pIdx][s][2] - 0.10) * op;
+            [blended addObject:(id)[UIColor colorWithRed:r green:g blue:b alpha:1.0].CGColor];
+        }
+        cgColors = blended;
+    }
+
+    if (animated) {
+        self.wallpaperGradient.colors = cgColors;
+    } else {
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        self.wallpaperGradient.colors = cgColors;
+        [CATransaction commit];
+    }
 }
 
 - (void)populateFallbackSampleSong {
@@ -848,6 +909,24 @@ static NSArray<LRPPreviewLine *> *lrpParseLrcUTF8(const char *utf8) {
     Boolean autoVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)autoFontKey, domain, &autoKeyExists);
     self.autoFontSize = autoKeyExists ? (BOOL)autoVal : YES;
 
+    // Enable Dynamic Wallpaper (default YES)
+    Boolean dynKeyExists = false;
+    NSString *dynKey = lrpStr("enableDynamicWallpaper");
+    Boolean dynVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)dynKey, domain, &dynKeyExists);
+    self.enableDynamicWallpaper = dynKeyExists ? (BOOL)dynVal : YES;
+
+    // Dynamic Wallpaper Opacity (default 0.90)
+    CGFloat dynOpacity = 0.90;
+    NSString *dynOpKey = lrpStr("dynamicWallpaperOpacity");
+    CFPropertyListRef dynOpVal = CFPreferencesCopyAppValue((__bridge CFStringRef)dynOpKey, domain);
+    if (dynOpVal && CFGetTypeID(dynOpVal) == CFNumberGetTypeID()) {
+        dynOpacity = [(__bridge NSNumber *)dynOpVal doubleValue];
+        CFRelease(dynOpVal);
+    } else if (dynOpVal) {
+        CFRelease(dynOpVal);
+    }
+    self.dynamicWallpaperOpacity = MAX(0.20, MIN(1.00, dynOpacity));
+
     // Alignment preset (default 0 = Custom)
     NSInteger preset = 0;
     NSString *presetKey = lrpStr("alignmentPreset");
@@ -906,6 +985,7 @@ static NSArray<LRPPreviewLine *> *lrpParseLrcUTF8(const char *utf8) {
         [self loadRandomCachedSong];
     }
 
+    [self updatePreviewWallpaperColorsAnimated:animated];
     [self updateMediaCardMetadata];
     [self rebuildPreviewLyricsLabels];
 
@@ -1044,6 +1124,7 @@ static NSArray<LRPPreviewLine *> *lrpParseLrcUTF8(const char *utf8) {
     [self.hapticGenerator prepare];
 
     [self loadRandomCachedSong];
+    [self updatePreviewWallpaperColorsAnimated:YES];
     [self updateMediaCardMetadata];
     [UIView transitionWithView:self.lyricsStackView
                       duration:0.15
