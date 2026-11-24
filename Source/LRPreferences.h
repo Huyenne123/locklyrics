@@ -42,6 +42,7 @@ typedef NS_ENUM(NSInteger, LRLyricsProvider) {
 // Dynamic Wallpaper & Layering
 @property (nonatomic, assign) BOOL enableDynamicWallpaper;
 @property (nonatomic, assign) BOOL enableHomeScreenWallpaper;
+@property (nonatomic, assign) BOOL idleRandomWallpaper;
 @property (nonatomic, assign) BOOL lyricsInWallpaperLayer;
 @property (nonatomic, assign) CGFloat dynamicWallpaperOpacity;     // 0.20 .. 1.00, default 0.90
 @property (nonatomic, assign) CGFloat dynamicWallpaperSpeed;       // 0.00 .. 2.00, default 0.60

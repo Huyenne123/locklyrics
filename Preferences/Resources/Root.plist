@@ -218,8 +218,8 @@ Blacklist: All apps display lyrics except selected apps.</string>
 			<key>footerText</key>
 			<string>Renders a live Metal mesh gradient sampled from album art directly in the wallpaper layer.
 "Show on Home Screen" displays the album-art mesh gradient behind Home Screen icons without lyrics.
-Top slider: Opacity (0.2–1.0) • Bottom slider: Animation Speed (0.0–2.0).
-"Lyrics in Wallpaper Layer" places lyrics behind notifications and blur cards (disable for direct Lock Screen dragging). Automatically pauses GPU rendering when sleeping, paused, or inside an app.</string>
+"Random Song Art When Idle" shows a random previously played song's album-art gradient on Lock &amp; Home Screen (without lyrics) when nothing is playing.
+Top slider: Opacity (0.2–1.0) • Bottom slider: Animation Speed (0.0–2.0). Automatically pauses GPU rendering when sleeping or inside an app.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -246,6 +246,20 @@ Top slider: Opacity (0.2–1.0) • Bottom slider: Animation Speed (0.0–2.0).
 			<string>enableHomeScreenWallpaper</string>
 			<key>label</key>
 			<string>Show on Home Screen</string>
+			<key>PostNotification</key>
+			<string>com.locklyrics.preferences.changed</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.locklyrics.preferences</string>
+			<key>key</key>
+			<string>idleRandomWallpaper</string>
+			<key>label</key>
+			<string>Random Song Art When Idle</string>
 			<key>PostNotification</key>
 			<string>com.locklyrics.preferences.changed</string>
 		</dict>

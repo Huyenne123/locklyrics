@@ -6,6 +6,8 @@
 #import <math.h>
 #import <sys/stat.h>
 #import <unistd.h>
+#import <dirent.h>
+#import <stdlib.h>
 
 @interface SBMediaController : NSObject
 + (instancetype)sharedInstance;
@@ -17,6 +19,7 @@
 @end
 
 static const char *kOfflineLyricsDir = "/var/mobile/Library/LockLyrics/Lyrics";
+static const char *kOfflineArtworkDir = "/var/mobile/Library/LockLyrics/Artwork";
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -111,7 +114,14 @@ static void ensureOfflineDir(void) {
     });
 }
 
-static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t outSize) {
+static void ensureOfflineArtworkDir(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        makeDirRecursive(kOfflineArtworkDir);
+    });
+}
+
+static void offlineJsonPathForKeyInDir(const char *dirPath, const char *cacheKey, char *outPath, size_t outSize) {
     char clean[256];
     size_t j = 0;
     for (size_t i = 0; cacheKey && cacheKey[i] && j < sizeof(clean) - 6; i++) {
@@ -124,7 +134,101 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
         }
     }
     clean[j] = '\0';
-    snprintf(outPath, outSize, "%s/%s.json", kOfflineLyricsDir, clean);
+    snprintf(outPath, outSize, "%s/%s.json", dirPath, clean);
+}
+
+static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t outSize) {
+    offlineJsonPathForKeyInDir(kOfflineLyricsDir, cacheKey, outPath, outSize);
+}
+
+static void artworkPathForKey(const char *rawKey, char *outPath, size_t outSize) {
+    offlineJsonPathForKeyInDir(kOfflineArtworkDir, rawKey, outPath, outSize);
+}
+
+static NSString *artworkKeyForTrackAndArtist(NSString *track, NSString *artist) {
+    return [NSString stringWithFormat:@"%@||%@", (artist ?: @""), (track ?: @"")].lowercaseString;
+}
+
+static NSDictionary *serializePaletteDict(NSArray<UIColor *> *palette, NSString *track, NSString *artist) {
+    NSMutableArray *colorArrays = [NSMutableArray arrayWithCapacity:palette.count];
+    for (UIColor *color in palette) {
+        CGFloat r = 0.0, g = 0.0, b = 0.0, a = 1.0;
+        if (![color getRed:&r green:&g blue:&b alpha:&a]) {
+            CGFloat w = 0.0;
+            if ([color getWhite:&w alpha:&a]) {
+                r = g = b = w;
+            }
+        }
+        [colorArrays addObject:@[@(r), @(g), @(b), @(a)]];
+    }
+    return @{
+        @"trackName": track ?: @"",
+        @"artistName": artist ?: @"",
+        @"colors": [colorArrays copy]
+    };
+}
+
+static NSArray<UIColor *> *deserializePaletteDict(NSDictionary *dict) {
+    if (![dict isKindOfClass:[NSDictionary class]]) return nil;
+    NSArray *rawColors = dict[@"colors"];
+    if (![rawColors isKindOfClass:[NSArray class]] || rawColors.count < 3) return nil;
+
+    NSMutableArray<UIColor *> *colors = [NSMutableArray arrayWithCapacity:rawColors.count];
+    for (id entry in rawColors) {
+        if (![entry isKindOfClass:[NSArray class]]) continue;
+        NSArray *comps = (NSArray *)entry;
+        if (comps.count < 3) continue;
+        if (![comps[0] isKindOfClass:[NSNumber class]] ||
+            ![comps[1] isKindOfClass:[NSNumber class]] ||
+            ![comps[2] isKindOfClass:[NSNumber class]]) {
+            continue;
+        }
+        CGFloat r = MAX(0.0, MIN(1.0, [comps[0] doubleValue]));
+        CGFloat g = MAX(0.0, MIN(1.0, [comps[1] doubleValue]));
+        CGFloat b = MAX(0.0, MIN(1.0, [comps[2] doubleValue]));
+        CGFloat a = (comps.count >= 4 && [comps[3] isKindOfClass:[NSNumber class]])
+            ? MAX(0.0, MIN(1.0, [comps[3] doubleValue]))
+            : 1.0;
+        [colors addObject:[UIColor colorWithRed:r green:g blue:b alpha:a]];
+    }
+    return (colors.count >= 3) ? [colors copy] : nil;
+}
+
+static BOOL hasJsonExtension(const char *name) {
+    if (!name) return NO;
+    size_t len = strlen(name);
+    return (len > 5 && strcmp(name + len - 5, ".json") == 0);
+}
+
+static NSArray<NSString *> *collectJsonFilesInDir(const char *dirPath) {
+    if (!dirPath) return @[];
+    DIR *dir = opendir(dirPath);
+    if (!dir) return @[];
+
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (!hasJsonExtension(entry->d_name)) continue;
+        char fullPath[512];
+        snprintf(fullPath, sizeof(fullPath), "%s/%s", dirPath, entry->d_name);
+        NSString *pathStr = [NSString stringWithUTF8String:fullPath];
+        if (pathStr) {
+            [paths addObject:pathStr];
+        }
+    }
+    closedir(dir);
+    return paths;
+}
+
+static void shuffleMutableArray(NSMutableArray *arr) {
+    NSUInteger count = arr.count;
+    if (count < 2) return;
+    for (NSUInteger i = count - 1; i > 0; i--) {
+        NSUInteger j = (NSUInteger)arc4random_uniform((uint32_t)(i + 1));
+        if (i != j) {
+            [arr exchangeObjectAtIndex:i withObjectAtIndex:j];
+        }
+    }
 }
 
 @interface LRLyricsManager ()
@@ -149,6 +253,10 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
 @property (nonatomic, strong) dispatch_queue_t artworkQueue;
 @property (nonatomic, copy) NSString *lastArtworkFingerprint;
 @property (nonatomic, strong, readwrite) NSArray<UIColor *> *currentArtworkColors;
+@property (nonatomic, strong, readwrite) NSArray<UIColor *> *idleArtworkColors;
+@property (nonatomic, copy) NSString *lastIdleArtworkKey;
+@property (nonatomic, assign) NSInteger lastFallbackPaletteIndex;
+@property (nonatomic, assign) NSUInteger idleArtworkRequestId;
 
 @end
 
@@ -178,6 +286,8 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
         _playbackRate = 1.0f;
         _isPlaying = NO;
         _artworkQueue = dispatch_queue_create("com.locklyrics.artwork", DISPATCH_QUEUE_SERIAL);
+        _lastFallbackPaletteIndex = -1;
+        _idleArtworkColors = [LRColorExtractor randomFallbackPaletteAvoidingIndex:-1 outIndex:&_lastFallbackPaletteIndex];
     }
     return self;
 }
@@ -233,6 +343,20 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
         for (id<LRLyricsObserver> obs in allObservers) {
             if ([obs respondsToSelector:@selector(lyricsManagerDidUpdateArtworkColors:)]) {
                 [obs lyricsManagerDidUpdateArtworkColors:colors];
+            }
+        }
+    });
+}
+
+- (void)notifyIdleArtworkColorsUpdated:(NSArray<UIColor *> *)colors {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSArray *allObservers;
+        @synchronized (self.observers) {
+            allObservers = self.observers.allObjects;
+        }
+        for (id<LRLyricsObserver> obs in allObservers) {
+            if ([obs respondsToSelector:@selector(lyricsManagerDidUpdateIdleArtworkColors:)]) {
+                [obs lyricsManagerDidUpdateIdleArtworkColors:colors];
             }
         }
     });
@@ -335,6 +459,7 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
                name:kMRMediaRemoteNowPlayingPlaybackQueueDidChangeNotification
              object:nil];
 
+    [self refreshRandomIdleArtwork];
     [self fetchLatestNowPlayingInfo];
 }
 
@@ -438,6 +563,10 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
             return;
         }
         NSDictionary *dict = (__bridge NSDictionary *)information;
+        if (dict.count == 0 && !self.isPlaying) {
+            [self clearCurrentSong];
+            return;
+        }
         [self updateWithInfoDictionary:dict];
     });
 
@@ -495,31 +624,11 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
         self.lastTimestamp = [NSDate date];
     }
 
-    // Process Now Playing Artwork for dynamic mesh gradient wallpaper
     NSData *artworkData = info[kMRMediaRemoteNowPlayingInfoArtworkData];
     NSString *artworkId = info[kMRMediaRemoteNowPlayingInfoArtworkIdentifier];
     BOOL hasValidArtworkData = (artworkData && [artworkData isKindOfClass:[NSData class]] && artworkData.length > 0);
-    if (hasValidArtworkData) {
-        NSString *fp = [self fingerprintForArtworkData:artworkData identifier:artworkId];
-        if (![fp isEqualToString:self.lastArtworkFingerprint]) {
-            self.lastArtworkFingerprint = fp;
-            NSData *dataCopy = [artworkData copy];
-            __weak typeof(self) weakSelf = self;
-            dispatch_async(self.artworkQueue, ^{
-                NSArray<UIColor *> *palette = [LRColorExtractor extractPaletteFromImageData:dataCopy];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    __strong typeof(weakSelf) strongSelf = weakSelf;
-                    if (!strongSelf || ![strongSelf.lastArtworkFingerprint isEqualToString:fp]) {
-                        return;
-                    }
-                    strongSelf.currentArtworkColors = palette;
-                    [strongSelf notifyArtworkColorsUpdated:palette];
-                });
-            });
-        }
-    }
 
-    // Only update track and fetch lyrics if a valid title is present in this dictionary
+    // Update track metadata before extracting artwork so saved palettes use the active track & artist
     if (title && [title isKindOfClass:[NSString class]] && title.length > 0) {
         if (artist && ![artist isKindOfClass:[NSString class]]) {
             artist = nil;
@@ -552,6 +661,259 @@ static void offlinePathForCacheKey(const char *cacheKey, char *outPath, size_t o
         // Metadata packet without title (e.g. play/pause/elapsed updates): keep currentSong!
         [self notifyPlaybackStateChanged:self.isPlaying];
     }
+
+    // Process Now Playing Artwork for dynamic mesh gradient wallpaper & persistent idle cache
+    if (hasValidArtworkData) {
+        NSString *fp = [self fingerprintForArtworkData:artworkData identifier:artworkId];
+        if (![fp isEqualToString:self.lastArtworkFingerprint]) {
+            self.lastArtworkFingerprint = fp;
+            NSData *dataCopy = [artworkData copy];
+            NSString *saveTitle = [self.currentTitle copy];
+            NSString *saveArtist = [self.currentArtist copy];
+            __weak typeof(self) weakSelf = self;
+            dispatch_async(self.artworkQueue, ^{
+                NSArray<UIColor *> *palette = [LRColorExtractor extractPaletteFromImageData:dataCopy];
+                if (saveTitle.length > 0 && palette.count > 0) {
+                    ensureOfflineArtworkDir();
+                    NSString *artKey = artworkKeyForTrackAndArtist(saveTitle, saveArtist);
+                    char artPath[512];
+                    artworkPathForKey([artKey UTF8String], artPath, sizeof(artPath));
+                    NSDictionary *artDict = serializePaletteDict(palette, saveTitle, saveArtist);
+                    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:artDict options:0 error:nil];
+                    if (jsonData) {
+                        writeDataToFile(artPath, jsonData);
+                    }
+                }
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    __strong typeof(weakSelf) strongSelf = weakSelf;
+                    if (!strongSelf || ![strongSelf.lastArtworkFingerprint isEqualToString:fp]) {
+                        return;
+                    }
+                    strongSelf.currentArtworkColors = palette;
+                    [strongSelf notifyArtworkColorsUpdated:palette];
+                });
+            });
+        }
+    }
+}
+
+#pragma mark - Idle Random Song Artwork Cache & Bootstrap
+
+- (void)applyIdleFallbackAvoidingIndex:(NSInteger)avoidIdx forRequest:(NSUInteger)reqId {
+    NSInteger newIdx = -1;
+    NSArray<UIColor *> *fallback = [LRColorExtractor randomFallbackPaletteAvoidingIndex:avoidIdx outIndex:&newIdx];
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || strongSelf.idleArtworkRequestId != reqId) return;
+        strongSelf.lastFallbackPaletteIndex = newIdx;
+        strongSelf.idleArtworkColors = fallback;
+        [strongSelf notifyIdleArtworkColorsUpdated:fallback];
+    });
+}
+
+- (void)fetchItunesArtworkAndCacheForTrack:(NSString *)track
+                                    artist:(NSString *)artist
+                                artworkKey:(NSString *)artKey
+                               artworkPath:(NSString *)artPath
+                                 requestId:(NSUInteger)reqId {
+    if (!track || track.length == 0 || !artPath || artPath.length == 0) return;
+
+    NSString *query = (artist && artist.length > 0)
+        ? [NSString stringWithFormat:@"%@ %@", track, artist]
+        : track;
+    NSString *urlString = [NSString stringWithFormat:@"https://itunes.apple.com/search?term=%@&media=music&entity=song&limit=3", urlEncodeParam(query)];
+    NSURL *searchUrl = [NSURL URLWithString:urlString];
+    if (!searchUrl) return;
+
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:searchUrl];
+    [req setValue:@"LockLyrics-iOS/1.0" forHTTPHeaderField:@"User-Agent"];
+    [req setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+
+    __weak typeof(self) weakSelf = self;
+    NSURLSessionDataTask *searchTask = [self.session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+        if (error || !data || httpResp.statusCode != 200) return;
+
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (![json isKindOfClass:[NSDictionary class]]) return;
+        NSArray *results = json[@"results"];
+        if (![results isKindOfClass:[NSArray class]] || results.count == 0) return;
+
+        NSString *artworkUrlStr = nil;
+        for (id item in results) {
+            if (![item isKindOfClass:[NSDictionary class]]) continue;
+            NSString *candidateUrl = item[@"artworkUrl100"];
+            if ([candidateUrl isKindOfClass:[NSString class]] && candidateUrl.length > 0) {
+                artworkUrlStr = candidateUrl;
+                break;
+            }
+        }
+        if (!artworkUrlStr) return;
+
+        NSURL *imgUrl = [NSURL URLWithString:artworkUrlStr];
+        if (!imgUrl) return;
+
+        NSURLSessionDataTask *imgTask = [weakSelf.session dataTaskWithURL:imgUrl completionHandler:^(NSData *imgData, NSURLResponse *imgResp, NSError *imgErr) {
+            NSHTTPURLResponse *imgHttp = (NSHTTPURLResponse *)imgResp;
+            if (imgErr || !imgData || imgData.length == 0 || imgHttp.statusCode != 200) return;
+
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            dispatch_async(strongSelf.artworkQueue, ^{
+                NSArray<UIColor *> *fetchedPalette = [LRColorExtractor extractPaletteFromImageData:imgData];
+                if (fetchedPalette.count < 3) return;
+
+                ensureOfflineArtworkDir();
+                NSDictionary *artDict = serializePaletteDict(fetchedPalette, track, artist);
+                NSData *jsonData = [NSJSONSerialization dataWithJSONObject:artDict options:0 error:nil];
+                if (jsonData) {
+                    writeDataToFile([artPath UTF8String], jsonData);
+                }
+
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    __strong typeof(weakSelf) mainSelf = weakSelf;
+                    if (!mainSelf || mainSelf.idleArtworkRequestId != reqId) return;
+                    mainSelf.lastIdleArtworkKey = artKey;
+                    mainSelf.idleArtworkColors = fetchedPalette;
+                    [mainSelf notifyIdleArtworkColorsUpdated:fetchedPalette];
+                });
+            });
+        }];
+        [imgTask resume];
+    }];
+    [searchTask resume];
+}
+
+- (void)refreshRandomIdleArtwork {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self refreshRandomIdleArtwork];
+        });
+        return;
+    }
+
+    NSUInteger reqId = ++self.idleArtworkRequestId;
+    NSString *avoidKey = [self.lastIdleArtworkKey copy];
+    NSInteger prevFallbackIdx = self.lastFallbackPaletteIndex;
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(self.artworkQueue, ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        NSArray<NSString *> *artworkFiles = collectJsonFilesInDir(kOfflineArtworkDir);
+        NSArray<NSString *> *lyricsFiles = collectJsonFilesInDir(kOfflineLyricsDir);
+        NSMutableDictionary<NSString *, NSDictionary *> *candidatesByKey = [NSMutableDictionary dictionary];
+
+        for (NSString *lrcPath in lyricsFiles) {
+            NSData *data = readDataFromFile([lrcPath UTF8String]);
+            if (!data) continue;
+            NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if (![dict isKindOfClass:[NSDictionary class]]) continue;
+            NSString *trackName = dict[@"trackName"] ?: dict[@"name"];
+            if (![trackName isKindOfClass:[NSString class]] || trackName.length == 0) continue;
+            NSString *artistName = [dict[@"artistName"] isKindOfClass:[NSString class]] ? dict[@"artistName"] : @"";
+            NSString *key = artworkKeyForTrackAndArtist(trackName, artistName);
+            char artPath[512];
+            artworkPathForKey([key UTF8String], artPath, sizeof(artPath));
+            NSString *artPathStr = [NSString stringWithUTF8String:artPath];
+            if (!artPathStr) continue;
+            candidatesByKey[key] = @{
+                @"key": key,
+                @"track": trackName,
+                @"artist": artistName,
+                @"artPath": artPathStr
+            };
+        }
+
+        for (NSString *artJsonPath in artworkFiles) {
+            NSData *data = readDataFromFile([artJsonPath UTF8String]);
+            if (!data) continue;
+            NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if (![dict isKindOfClass:[NSDictionary class]]) continue;
+            NSString *trackName = [dict[@"trackName"] isKindOfClass:[NSString class]] ? dict[@"trackName"] : @"";
+            NSString *artistName = [dict[@"artistName"] isKindOfClass:[NSString class]] ? dict[@"artistName"] : @"";
+            NSString *key = (trackName.length > 0) ? artworkKeyForTrackAndArtist(trackName, artistName) : artJsonPath;
+            candidatesByKey[key] = @{
+                @"key": key,
+                @"track": trackName,
+                @"artist": artistName,
+                @"artPath": artJsonPath
+            };
+        }
+
+        NSMutableArray<NSDictionary *> *candidates = [candidatesByKey.allValues mutableCopy];
+        if (candidates.count == 0) {
+            [strongSelf applyIdleFallbackAvoidingIndex:prevFallbackIdx forRequest:reqId];
+            return;
+        }
+
+        if (candidates.count > 1 && avoidKey.length > 0) {
+            NSMutableArray<NSDictionary *> *filtered = [NSMutableArray arrayWithCapacity:candidates.count];
+            for (NSDictionary *c in candidates) {
+                if (![c[@"key"] isEqualToString:avoidKey]) {
+                    [filtered addObject:c];
+                }
+            }
+            if (filtered.count > 0) {
+                candidates = filtered;
+            }
+        }
+        shuffleMutableArray(candidates);
+
+        NSDictionary *chosen = candidates[0];
+        NSString *chosenArtPath = chosen[@"artPath"];
+        if (chosenArtPath.length > 0 && fileExists([chosenArtPath UTF8String])) {
+            NSData *data = readDataFromFile([chosenArtPath UTF8String]);
+            NSDictionary *dict = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+            NSArray<UIColor *> *palette = deserializePaletteDict(dict);
+            if (palette.count >= 3) {
+                NSString *chosenKey = chosen[@"key"];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    __strong typeof(weakSelf) mainSelf = weakSelf;
+                    if (!mainSelf || mainSelf.idleArtworkRequestId != reqId) return;
+                    mainSelf.lastIdleArtworkKey = chosenKey;
+                    mainSelf.idleArtworkColors = palette;
+                    [mainSelf notifyIdleArtworkColorsUpdated:palette];
+                });
+                return;
+            }
+        }
+
+        // Chosen song lacks cached artwork palette yet: show any other cached song palette (or vibrant fallback) immediately
+        BOOL appliedImmediate = NO;
+        for (NSUInteger i = 1; i < candidates.count; i++) {
+            NSDictionary *alt = candidates[i];
+            NSString *altPath = alt[@"artPath"];
+            if (altPath.length == 0 || !fileExists([altPath UTF8String])) continue;
+            NSData *data = readDataFromFile([altPath UTF8String]);
+            NSDictionary *dict = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+            NSArray<UIColor *> *altPalette = deserializePaletteDict(dict);
+            if (altPalette.count >= 3) {
+                NSString *altKey = alt[@"key"];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    __strong typeof(weakSelf) mainSelf = weakSelf;
+                    if (!mainSelf || mainSelf.idleArtworkRequestId != reqId) return;
+                    mainSelf.lastIdleArtworkKey = altKey;
+                    mainSelf.idleArtworkColors = altPalette;
+                    [mainSelf notifyIdleArtworkColorsUpdated:altPalette];
+                });
+                appliedImmediate = YES;
+                break;
+            }
+        }
+        if (!appliedImmediate) {
+            [strongSelf applyIdleFallbackAvoidingIndex:prevFallbackIdx forRequest:reqId];
+        }
+
+        [strongSelf fetchItunesArtworkAndCacheForTrack:chosen[@"track"]
+                                                artist:chosen[@"artist"]
+                                            artworkKey:chosen[@"key"]
+                                           artworkPath:chosenArtPath
+                                             requestId:reqId];
+    });
 }
 
 - (void)clearCurrentSong {

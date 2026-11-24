@@ -87,6 +87,82 @@ static NSArray<UIColor *> *lrMonochromeAtmosphericPalette(CGFloat avgLum) {
     ];
 }
 
++ (NSArray<UIColor *> *)randomFallbackPaletteAvoidingIndex:(NSInteger)avoidIndex outIndex:(NSInteger *)outIndex {
+    static NSArray<NSArray<UIColor *> *> *palettes = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        palettes = @[
+            // 1. Ocean Teal / Indigo
+            [self defaultPalette],
+            // 2. Sunset Crimson / Warm Amber
+            @[
+                [UIColor colorWithRed:0.55 green:0.14 blue:0.16 alpha:1.0],
+                [UIColor colorWithRed:0.64 green:0.29 blue:0.13 alpha:1.0],
+                [UIColor colorWithRed:0.42 green:0.11 blue:0.22 alpha:1.0],
+                [UIColor colorWithRed:0.58 green:0.22 blue:0.20 alpha:1.0],
+                [UIColor colorWithRed:0.48 green:0.33 blue:0.14 alpha:1.0],
+                [UIColor colorWithRed:0.18 green:0.06 blue:0.08 alpha:1.0],
+                [UIColor colorWithRed:0.21 green:0.09 blue:0.07 alpha:1.0],
+                [UIColor colorWithRed:0.14 green:0.05 blue:0.10 alpha:1.0]
+            ],
+            // 3. Synthwave Violet / Magenta
+            @[
+                [UIColor colorWithRed:0.36 green:0.14 blue:0.52 alpha:1.0],
+                [UIColor colorWithRed:0.56 green:0.16 blue:0.44 alpha:1.0],
+                [UIColor colorWithRed:0.22 green:0.18 blue:0.56 alpha:1.0],
+                [UIColor colorWithRed:0.46 green:0.20 blue:0.58 alpha:1.0],
+                [UIColor colorWithRed:0.60 green:0.22 blue:0.36 alpha:1.0],
+                [UIColor colorWithRed:0.12 green:0.06 blue:0.20 alpha:1.0],
+                [UIColor colorWithRed:0.19 green:0.07 blue:0.17 alpha:1.0],
+                [UIColor colorWithRed:0.09 green:0.07 blue:0.19 alpha:1.0]
+            ],
+            // 4. Emerald / Forest Gold
+            @[
+                [UIColor colorWithRed:0.09 green:0.39 blue:0.26 alpha:1.0],
+                [UIColor colorWithRed:0.16 green:0.48 blue:0.31 alpha:1.0],
+                [UIColor colorWithRed:0.29 green:0.44 blue:0.17 alpha:1.0],
+                [UIColor colorWithRed:0.08 green:0.30 blue:0.29 alpha:1.0],
+                [UIColor colorWithRed:0.40 green:0.38 blue:0.16 alpha:1.0],
+                [UIColor colorWithRed:0.05 green:0.15 blue:0.10 alpha:1.0],
+                [UIColor colorWithRed:0.08 green:0.18 blue:0.09 alpha:1.0],
+                [UIColor colorWithRed:0.04 green:0.12 blue:0.12 alpha:1.0]
+            ],
+            // 5. Rose / Coral Dusk
+            @[
+                [UIColor colorWithRed:0.56 green:0.19 blue:0.31 alpha:1.0],
+                [UIColor colorWithRed:0.62 green:0.30 blue:0.27 alpha:1.0],
+                [UIColor colorWithRed:0.41 green:0.17 blue:0.36 alpha:1.0],
+                [UIColor colorWithRed:0.50 green:0.25 blue:0.42 alpha:1.0],
+                [UIColor colorWithRed:0.58 green:0.35 blue:0.22 alpha:1.0],
+                [UIColor colorWithRed:0.19 green:0.07 blue:0.13 alpha:1.0],
+                [UIColor colorWithRed:0.21 green:0.09 blue:0.10 alpha:1.0],
+                [UIColor colorWithRed:0.14 green:0.06 blue:0.14 alpha:1.0]
+            ],
+            // 6. Midnight Cobalt / Cyan
+            @[
+                [UIColor colorWithRed:0.10 green:0.24 blue:0.54 alpha:1.0],
+                [UIColor colorWithRed:0.12 green:0.41 blue:0.58 alpha:1.0],
+                [UIColor colorWithRed:0.19 green:0.17 blue:0.49 alpha:1.0],
+                [UIColor colorWithRed:0.08 green:0.33 blue:0.46 alpha:1.0],
+                [UIColor colorWithRed:0.24 green:0.32 blue:0.60 alpha:1.0],
+                [UIColor colorWithRed:0.05 green:0.09 blue:0.21 alpha:1.0],
+                [UIColor colorWithRed:0.06 green:0.14 blue:0.22 alpha:1.0],
+                [UIColor colorWithRed:0.07 green:0.07 blue:0.18 alpha:1.0]
+            ]
+        ];
+    });
+
+    NSInteger count = (NSInteger)palettes.count;
+    NSInteger chosen = (NSInteger)arc4random_uniform((uint32_t)count);
+    if (count > 1 && avoidIndex >= 0 && avoidIndex < count && chosen == avoidIndex) {
+        chosen = (chosen + 1 + (NSInteger)arc4random_uniform((uint32_t)(count - 1))) % count;
+    }
+    if (outIndex) {
+        *outIndex = chosen;
+    }
+    return palettes[(NSUInteger)chosen];
+}
+
 + (NSArray<UIColor *> *)extractPaletteFromImageData:(NSData *)imageData {
     if (!imageData || imageData.length == 0) {
         return [self defaultPalette];

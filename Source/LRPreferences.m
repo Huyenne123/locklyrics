@@ -114,6 +114,10 @@
     Boolean homeWallVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"enableHomeScreenWallpaper", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
     self.enableHomeScreenWallpaper = keyExistsAndHasValidFormat ? homeWallVal : YES;
 
+    // Show Random Song Art Wallpaper When Nothing Is Playing (without lyrics)
+    Boolean idleWallVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"idleRandomWallpaper", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
+    self.idleRandomWallpaper = keyExistsAndHasValidFormat ? idleWallVal : YES;
+
     // Lyrics in Wallpaper Layer
     Boolean wallLayerVal = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)@"lyricsInWallpaperLayer", kLRPreferencesIdentifier, &keyExistsAndHasValidFormat);
     self.lyricsInWallpaperLayer = keyExistsAndHasValidFormat ? wallLayerVal : YES;

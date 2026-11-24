@@ -8,6 +8,7 @@
 - (void)lyricsManagerDidUpdateSong:(LRLyricsSong *)song;
 - (void)lyricsManagerDidChangePlaybackState:(BOOL)isPlaying;
 - (void)lyricsManagerDidUpdateArtworkColors:(NSArray<UIColor *> *)colors;
+- (void)lyricsManagerDidUpdateIdleArtworkColors:(NSArray<UIColor *> *)colors;
 @end
 
 @interface LRLyricsManager : NSObject
@@ -22,6 +23,7 @@
 @property (nonatomic, strong, readonly) LRLyricsSong *currentSong;
 @property (nonatomic, assign, readonly) BOOL isLoading;
 @property (nonatomic, strong, readonly) NSArray<UIColor *> *currentArtworkColors;
+@property (nonatomic, strong, readonly) NSArray<UIColor *> *idleArtworkColors;
 @property (nonatomic, copy) NSString *nowPlayingBundleID;
 
 + (instancetype)sharedManager;
@@ -33,6 +35,7 @@
 - (void)removeObserver:(id<LRLyricsObserver>)observer;
 
 - (void)fetchLatestNowPlayingInfo;
+- (void)refreshRandomIdleArtwork;
 - (void)clearCurrentSong;
 - (void)updateWithInfoDictionary:(NSDictionary *)info;
 - (void)updatePlaybackState:(BOOL)isPlaying;

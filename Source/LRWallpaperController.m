@@ -71,6 +71,9 @@ static BOOL LRIsViewAboveView(UIView *viewA, UIView *viewB) {
 @property (nonatomic, assign) BOOL isHomeScreenVisible;
 @property (nonatomic, assign) BOOL isForegroundAppActive;
 @property (nonatomic, assign) BOOL isInLowPowerMode;
+@property (nonatomic, assign) BOOL isInIdleWallpaperMode;
+@property (nonatomic, assign) BOOL pauseDebounceScheduled;
+@property (nonatomic, assign) NSUInteger pauseDebounceToken;
 @property (nonatomic, strong) NSArray<UIColor *> *lastLockColors;
 @property (nonatomic, strong) NSArray<UIColor *> *lastHomeColors;
 @property (nonatomic, assign) BOOL desiredLockVisible;
@@ -131,6 +134,9 @@ static BOOL LRIsViewAboveView(UIView *viewA, UIView *viewB) {
         _isLockScreenVisible = NO;
         _isHomeScreenVisible = NO;
         _isForegroundAppActive = [self queryHasForegroundApp];
+        _isInIdleWallpaperMode = YES;
+        _pauseDebounceScheduled = NO;
+        _pauseDebounceToken = 0;
 
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(handlePowerStateChanged:)
@@ -235,11 +241,16 @@ static BOOL LRIsViewAboveView(UIView *viewA, UIView *viewB) {
     }
     [self syncMountHierarchyAndPowerState];
     if (screenOn && !wasOn) {
+        LRLyricsManager *mgr = [LRLyricsManager sharedManager];
+        LRPreferences *prefs = [LRPreferences sharedPreferences];
         if (self.isLockScreenVisible) {
-            [[LRLyricsManager sharedManager] fetchLatestNowPlayingInfo];
+            [mgr fetchLatestNowPlayingInfo];
             [self.lyricsView reloadData];
         } else if (self.isHomeScreenVisible) {
-            [[LRLyricsManager sharedManager] fetchLatestNowPlayingInfo];
+            [mgr fetchLatestNowPlayingInfo];
+        }
+        if (self.isInIdleWallpaperMode && prefs.enabled && prefs.enableDynamicWallpaper && prefs.idleRandomWallpaper) {
+            [mgr refreshRandomIdleArtwork];
         }
     }
 }
@@ -395,7 +406,46 @@ static BOOL LRIsViewAboveView(UIView *viewA, UIView *viewB) {
         }
     }
 
-    // 3. Lyrics View Mounting (Lock Screen ONLY: Wallpaper Layer Mode vs CoverSheet Overlay Mode)
+    // 3. Playback vs Idle Mode State (with 0.8s debounce when pausing to avoid flicker during skips)
+    BOOL hasActiveMusic = mgr.isCurrentAppAllowed && (mgr.currentTitle.length > 0);
+    BOOL rawMusicPlaying = mgr.isPlaying && hasActiveMusic;
+
+    if (rawMusicPlaying) {
+        self.pauseDebounceToken++;
+        self.pauseDebounceScheduled = NO;
+        self.isInIdleWallpaperMode = NO;
+    } else if (!hasActiveMusic) {
+        self.pauseDebounceToken++;
+        self.pauseDebounceScheduled = NO;
+        if (!self.isInIdleWallpaperMode) {
+            self.isInIdleWallpaperMode = YES;
+            [mgr refreshRandomIdleArtwork];
+        }
+    } else {
+        if (!self.isInIdleWallpaperMode && !self.pauseDebounceScheduled) {
+            self.pauseDebounceScheduled = YES;
+            NSUInteger token = ++self.pauseDebounceToken;
+            __weak typeof(self) weakSelf = self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                __strong typeof(weakSelf) strongSelf = weakSelf;
+                if (!strongSelf || strongSelf.pauseDebounceToken != token) return;
+                strongSelf.pauseDebounceScheduled = NO;
+                LRLyricsManager *m = [LRLyricsManager sharedManager];
+                BOOL stillPaused = !(m.isPlaying && m.isCurrentAppAllowed && m.currentTitle.length > 0);
+                if (stillPaused && !strongSelf.isInIdleWallpaperMode) {
+                    strongSelf.isInIdleWallpaperMode = YES;
+                    [m refreshRandomIdleArtwork];
+                    [strongSelf syncMountHierarchyAndPowerState];
+                    [strongSelf.lyricsView reloadData];
+                }
+            });
+        }
+    }
+
+    BOOL showIdleRandomArt = self.isInIdleWallpaperMode && prefs.idleRandomWallpaper;
+    BOOL showActiveMusicArt = !showIdleRandomArt && hasActiveMusic;
+
+    // 4. Lyrics View Mounting (Lock Screen ONLY when playing active music; strictly hidden when idle or unlocked)
     BOOL lockMounted = (self.wallpaperHostView.superview != nil);
     BOOL homeMounted = (self.homeWallpaperHostView.superview != nil);
     if (prefs.lyricsInWallpaperLayer && lockMounted) {
@@ -415,8 +465,8 @@ static BOOL LRIsViewAboveView(UIView *viewA, UIView *viewB) {
         [self.lyricsView updateLayoutForParentBounds:csView.bounds];
     }
 
-    // Strictly hide and pause lyrics whenever Lock Screen is inactive or screen is off
-    BOOL lyricsActive = self.isLockScreenVisible && self.isScreenOn;
+    BOOL lyricsActive = self.isLockScreenVisible && self.isScreenOn && !showIdleRandomArt && hasActiveMusic;
+    BOOL lyricsBecameActive = (lyricsActive && !self.lyricsView.isLockscreenActive);
     if (self.lyricsView.isLockscreenActive != lyricsActive) {
         self.lyricsView.isLockscreenActive = lyricsActive;
     }
@@ -425,13 +475,15 @@ static BOOL LRIsViewAboveView(UIView *viewA, UIView *viewB) {
         [self.lyricsView.layer removeAllAnimations];
         self.lyricsView.hidden = YES;
         self.lyricsView.alpha = 0.0;
+    } else if (lyricsBecameActive) {
+        [self.lyricsView reloadData];
     }
 
-    // 4. Dual Lock vs Home Dynamic Wallpaper State Machine (zero double-blending / zero simultaneous animation)
-    BOOL hasActiveMusic = mgr.isCurrentAppAllowed && (mgr.currentTitle.length > 0);
-    BOOL baseDynamic = prefs.enabled && prefs.enableDynamicWallpaper && self.isScreenOn && hasActiveMusic;
+    // 5. Dual Lock vs Home Dynamic Wallpaper State Machine (zero double-blending / zero simultaneous animation)
+    BOOL baseDynamic = prefs.enabled && prefs.enableDynamicWallpaper && self.isScreenOn && (showActiveMusicArt || showIdleRandomArt);
     BOOL freezeForLowPower = prefs.dynamicWallpaperPowerSaver && self.isInLowPowerMode;
-    BOOL canAnimate = mgr.isPlaying && !freezeForLowPower && (prefs.dynamicWallpaperSpeed > 0.01);
+    BOOL shouldFlow = showActiveMusicArt ? mgr.isPlaying : showIdleRandomArt;
+    BOOL canAnimate = shouldFlow && !freezeForLowPower && (prefs.dynamicWallpaperSpeed > 0.01);
 
     BOOL homeVis = homeMounted && LRIsViewVisiblyAttached(homeTargetView);
     BOOL lockVis = lockMounted && LRIsViewVisiblyAttached(lockTargetView);
@@ -463,7 +515,9 @@ static BOOL LRIsViewAboveView(UIView *viewA, UIView *viewB) {
         }
     }
 
-    NSArray<UIColor *> *targetPalette = mgr.currentArtworkColors ?: [LRColorExtractor defaultPalette];
+    NSArray<UIColor *> *targetPalette = showActiveMusicArt
+        ? (mgr.currentArtworkColors ?: [LRColorExtractor defaultPalette])
+        : (mgr.idleArtworkColors ?: [LRColorExtractor defaultPalette]);
     BOOL immediateHideLock = !self.isScreenOn || (!self.isLockScreenVisible && homeViewIsTop);
     BOOL immediateHideHome = !self.isScreenOn || self.isLockScreenVisible;
 
@@ -502,17 +556,35 @@ static BOOL LRIsViewAboveView(UIView *viewA, UIView *viewB) {
 
 - (void)lyricsManagerDidUpdateArtworkColors:(NSArray<UIColor *> *)colors {
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSArray<UIColor *> *palette = colors ?: [LRColorExtractor defaultPalette];
-        self.lastLockColors = palette;
-        self.lastHomeColors = palette;
+        if (!self.isInIdleWallpaperMode && colors.count > 0) {
+            self.lastLockColors = colors;
+            self.lastHomeColors = colors;
 
-        BOOL animateLock = self.isScreenOn && !self.dynamicWallpaperView.hidden && self.dynamicWallpaperView.animating;
-        [self.dynamicWallpaperView setColors:palette animated:animateLock];
+            BOOL animateLock = self.isScreenOn && !self.dynamicWallpaperView.hidden && self.dynamicWallpaperView.animating;
+            [self.dynamicWallpaperView setColors:colors animated:animateLock];
 
-        BOOL animateHome = self.isScreenOn && !self.homeDynamicWallpaperView.hidden && self.homeDynamicWallpaperView.animating;
-        [self.homeDynamicWallpaperView setColors:palette animated:animateHome];
-
+            BOOL animateHome = self.isScreenOn && !self.homeDynamicWallpaperView.hidden && self.homeDynamicWallpaperView.animating;
+            [self.homeDynamicWallpaperView setColors:colors animated:animateHome];
+        }
         [self syncMountHierarchyAndPowerState];
+    });
+}
+
+- (void)lyricsManagerDidUpdateIdleArtworkColors:(NSArray<UIColor *> *)colors {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        LRPreferences *prefs = [LRPreferences sharedPreferences];
+        if (self.isInIdleWallpaperMode && prefs.idleRandomWallpaper && colors.count > 0) {
+            self.lastLockColors = colors;
+            self.lastHomeColors = colors;
+
+            BOOL animateLock = self.isScreenOn && !self.dynamicWallpaperView.hidden && self.dynamicWallpaperView.animating;
+            [self.dynamicWallpaperView setColors:colors animated:animateLock];
+
+            BOOL animateHome = self.isScreenOn && !self.homeDynamicWallpaperView.hidden && self.homeDynamicWallpaperView.animating;
+            [self.homeDynamicWallpaperView setColors:colors animated:animateHome];
+
+            [self syncMountHierarchyAndPowerState];
+        }
     });
 }
 

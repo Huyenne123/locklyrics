@@ -9,4 +9,7 @@
 /// Returns a rich deep teal/indigo/ocean fallback palette when artwork is unavailable.
 + (NSArray<UIColor *> *)defaultPalette;
 
+/// Returns one of several distinct legibility-tuned album-inspired palettes when no cached song artwork exists yet.
++ (NSArray<UIColor *> *)randomFallbackPaletteAvoidingIndex:(NSInteger)avoidIndex outIndex:(NSInteger *)outIndex;
+
 @end
